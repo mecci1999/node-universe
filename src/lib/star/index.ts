@@ -49,17 +49,17 @@ import { glob } from 'glob';
 
 // 默认选项
 const defaultOptions = {
-  namespace: '',
-  nodeID: null,
+  namespace: '', // 星球命名
+  nodeID: null, // 星球id
 
-  logger: true,
-  logLevel: null,
+  logger: true, // 是否启用日志记录
+  logLevel: null, // 日志等级分类
 
-  transporter: null, // 默认TCP协议,
+  transporter: null, // 通信模块的配置，默认使用TCP协议
 
   errorRegenerator: null,
 
-  requestTimeout: 0 * 1000,
+  requestTimeout: 0 * 1000, // 请求超时时间
   retryPolicy: {
     enabled: false,
     retries: 5,
@@ -176,13 +176,13 @@ export default class Star {
   public static PROTOCOL_VERSION: string = '1'; // 协议版本
   public static INTERNAL_MIDDLEWARES: string[] = INTERNAL_MIDDLEWARES;
 
-  public options: StarOptions = {};
-  public namespace: string | null = '';
-  public nodeID: string | null = '';
-  public metadata: GenericObject = {};
-  public instanceID: string = '';
-  public started: boolean = false; // 是否运行
-  public stopping: boolean = false; // 是否结束
+  public options: StarOptions = {}; // 配置选项
+  public namespace: string | null = ''; // 命名
+  public nodeID: string | null = ''; // 节点ID
+  public metadata: GenericObject = {}; // 元数据
+  public instanceID: string = ''; // 实例ID
+  public started: boolean = false; // 是否已启动
+  public stopping: boolean = false; // 是否正在停止
 
   public logger: LoggerInstance | null = null;
   public loggerFactory: LoggerFactory | null = null;
@@ -1405,8 +1405,8 @@ export default class Star {
     options:
       | boolean
       | {
-        [key: string]: Partial<ServiceSchema>;
-      }
+          [key: string]: Partial<ServiceSchema>;
+        }
   ) {
     options = isObject(options) ? options : {};
 
@@ -1532,7 +1532,7 @@ export default class Star {
     }
 
     if (servicesFiles) {
-      servicesFiles.forEach(filename => this.loadService(filename));
+      servicesFiles.forEach((filename) => this.loadService(filename));
     }
 
     return servicesFiles.length;

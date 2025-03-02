@@ -2,7 +2,7 @@ import { GenericObject } from '@/typings';
 import Star from '../star';
 import BaseSerializer from './base';
 import _ from 'lodash';
-import Cbor from 'cbor-x';
+import { Encoder } from 'cbor-x';
 
 export default class CborSerializer extends BaseSerializer {
   public encoder: any;
@@ -17,7 +17,7 @@ export default class CborSerializer extends BaseSerializer {
     super.init(star);
 
     try {
-      this.encoder = new Cbor.Encoder(this.options);
+      this.encoder = new Encoder(this.options);
     } catch (error) {
       this.star?.fatal(
         "The 'cbor-x' package is missing! Please install it with 'npm install cbor-x --save' command!",

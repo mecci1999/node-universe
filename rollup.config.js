@@ -3,6 +3,8 @@ const typescript = require('rollup-plugin-typescript2');
 const dts = require('rollup-plugin-dts');
 const tscAlias = require('rollup-plugin-tsc-alias');
 const json = require('@rollup/plugin-json');
+const alias = require('@rollup/plugin-alias');
+const { terser } = require('rollup-plugin-terser');
 
 module.exports = [
   {
@@ -11,19 +13,32 @@ module.exports = [
       {
         dir: './dist',
         format: 'cjs',
-        entryFileNames: '[name].js'
+        entryFileNames: '[name].js',
+        compact: true,
+        exports: 'auto'
       },
       {
         dir: './dist',
         format: 'esm',
-        entryFileNames: '[name].esm.js'
+        entryFileNames: '[name].esm.js',
+        compact: true,
       }
     ],
     plugins: [
+      alias({
+        entries: [
+          { find: '@/', replacement: './src/' }
+        ]
+      }),
       typescript({
         tsconfig: './tsconfig.build.json'
       }),
       tscAlias(),
+      terser({
+        format: {
+          comments: false
+        }
+      }),
       filesize(),
       json()
     ]
@@ -35,8 +50,13 @@ module.exports = [
       dts.default({
         compilerOptions: {
           emitDeclarationOnly: true,
-          resolveJsonModule: true
-        }
+          resolveJsonModule: true,
+          declaration: true,
+          declarationDir: null,
+          composite: false
+        },
+        outputAsModuleFolder: false,
+        tsconfig: './tsconfig.build.json'
       })
     ]
   }
