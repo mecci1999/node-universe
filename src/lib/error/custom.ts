@@ -9,12 +9,17 @@ import BaseError from './base';
  * 该类用来作为微服务应用所有错误类的基础类
  */
 export class UniverseError extends BaseError {
-  public code: UniverseErrorCode; // 错误码
-  public type: UniverseErrorOptionsType; // 错误类型
+  public code: UniverseErrorCode | number; // 错误码
+  public type: UniverseErrorOptionsType | string; // 错误类型
   public data?: UniverseErrorData; // 错误数据
   public retryable: boolean; // 是否可以重新连接
 
-  constructor(message: string, code?: UniverseErrorCode, type?: UniverseErrorOptionsType, data?: UniverseErrorData) {
+  constructor(
+    message: string,
+    code?: UniverseErrorCode | number,
+    type?: UniverseErrorOptionsType | string,
+    data?: UniverseErrorData
+  ) {
     super(message);
     this.code = code || UniverseErrorCode.BAD_GETWAY;
     this.type = type || UniverseErrorOptionsType.BAD_GETWAY;
@@ -28,7 +33,12 @@ export class UniverseError extends BaseError {
  * 为了满足在微服务应用中出现的可重试错误场景，创建该错误类
  */
 export class UniverseRetryableError extends UniverseError {
-  constructor(message: string, code?: UniverseErrorCode, type?: UniverseErrorOptionsType, data?: UniverseErrorData) {
+  constructor(
+    message: string,
+    code?: UniverseErrorCode | number,
+    type?: UniverseErrorOptionsType | string,
+    data?: UniverseErrorData
+  ) {
     super(message, code, type, data);
     this.retryable = true;
   }
@@ -60,7 +70,12 @@ export class StarServerError extends UniverseRetryableError {}
  * 为了处理不可重试的客户端错误
  */
 export class StarClientError extends UniverseError {
-  constructor(message: string, code: UniverseErrorCode, type: UniverseErrorOptionsType, data?: UniverseErrorData) {
+  constructor(
+    message: string,
+    code: UniverseErrorCode | number,
+    type: UniverseErrorOptionsType | string,
+    data?: UniverseErrorData
+  ) {
     super(message, code || UniverseErrorCode.RESPONSE_ERROR, type, data);
   }
 }
@@ -159,7 +174,7 @@ export class QueueIsFullError extends UniverseRetryableError {
  * 动作调用参数验证错误类
  */
 export class ValidationError extends StarClientError {
-  constructor(message: string, type?: UniverseErrorOptionsType, data?: UniverseErrorData) {
+  constructor(message: string, type?: UniverseErrorOptionsType | string, data?: UniverseErrorData) {
     super(message, UniverseErrorCode.VALIDATION_ERROR, type || UniverseErrorOptionsType.VALIDATION_ERROR, data);
   }
 }

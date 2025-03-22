@@ -86,13 +86,14 @@ export interface UniverseErrorData {
   eventName?: string;
   services?: any[];
   statuses?: any[];
+  [key: string]: any;
 }
 
 export interface UniverseErrorOptions {
   name: UniverseErrorType;
   message: string;
-  type: UniverseErrorOptionsType;
-  code: UniverseErrorCode;
+  type: UniverseErrorOptionsType | string;
+  code: UniverseErrorCode | number;
   data: UniverseErrorData;
 }
 
