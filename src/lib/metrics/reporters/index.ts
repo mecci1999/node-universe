@@ -5,13 +5,17 @@ import PrometheusReporter from './prometheus';
 import ConsoleReporter from './console';
 import EventRepoter from './event';
 import CSVReporter from './csv';
+import DataDogReporter from './datadog';
+import StatsdReporter from './statsd';
 
 const Reporters = {
   Base: BaseReporter,
   Console: ConsoleReporter,
   Event: EventRepoter,
   CSV: CSVReporter,
-  Prometheus: PrometheusReporter
+  Prometheus: PrometheusReporter,
+  DateDog: DataDogReporter,
+  Statsd: StatsdReporter
 };
 
 function getByName(name) {
