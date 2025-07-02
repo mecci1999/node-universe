@@ -126,15 +126,6 @@ export class LoggerFactory {
       };
     });
 
-    /*logger.log = function(type, ...args) {
-      if (broker.middlewares)
-        broker.middlewares.callSyncHandlers("newLogEntry", [type, args, bindings], {});
-
-      if (logHandlers.length == 0) return;
-
-      logHandlers.forEach(fn => fn(type, args));
-    };*/
-
     logger.appenders = appenders;
 
     this.cache.set(this.getBindingsKey(bindings), logger);
