@@ -42,10 +42,10 @@ export default class Context {
   public _spanStack: Span[];
   public needAck: boolean | null;
   public ackID: string | null;
-  public locals: object;
+  public locals: GenericObject;
   public level: number;
   public params: any;
-  public meta: object;
+  public meta: GenericObject;
   public requestID: string | null;
   public cachedResult: boolean;
   public starHrTime: any = null; // 开始时间
@@ -96,7 +96,7 @@ export default class Context {
   /**
    * 创建一个上下文实例
    */
-  public static create(star: Star, endpoint: Endpoint, params?: object, options?: GenericObject) {
+  public static create(star: Star, endpoint: Endpoint, params?: GenericObject, options?: GenericObject) {
     const ctx = new Context(star, endpoint);
 
     // endpoint
@@ -192,7 +192,7 @@ export default class Context {
    * @param newParams
    * @param cloning
    */
-  public setParams(newParams: object, cloning: boolean = false) {
+  public setParams(newParams: GenericObject, cloning: boolean = false) {
     if (cloning && newParams) {
       this.params = Object.assign({}, newParams);
     } else {
