@@ -28,8 +28,8 @@ export default class DataDogReporter extends BaseReporter {
       apiKey: process.env.DATADOG_API_KEY,
       //appKey: process.env.DATADOG_APP_KEY,
       defaultLabels: (registry) => ({
-        namespace: registry.broker.namespace,
-        nodeID: registry.broker.nodeID
+        namespace: registry.star.namespace,
+        nodeID: registry.star.nodeID
       }),
       interval: 10
     });

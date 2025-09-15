@@ -131,13 +131,13 @@ export default class FormattedLogger extends BaseLogger {
     if (isFunction(formatter)) {
       return (type: BaseLoggerLevels, args: any) => formatter.call(this, type, args, bindings, { printArgs });
     } else if (formatter === 'json') {
-      // {"timestamp":1581243299731,"level":"info","msg":"Universe is creating...","nodeID":"console","namespace":"","mod":"broker"}
+      // {"timestamp":1581243299731,"level":"info","msg":"Universe is creating...","nodeID":"console","namespace":"","mod":"star"}
       kleur.enabled = false;
       return (type: BaseLoggerLevels, args: any) => [
         JSON.stringify({ time: Date.now(), level: type, msg: printArgs(args).join(' '), ...bindings })
       ];
     } else if (formatter === 'jsonext') {
-      // {"time":"2020-02-09T10:44:35.285Z","level":"info","message":"Universe is creating...","nodeID":"console","namespace":"","mod":"broker"}
+      // {"time":"2020-02-09T10:44:35.285Z","level":"info","message":"Universe is creating...","nodeID":"console","namespace":"","mod":"star"}
       return (type: BaseLoggerLevels, args: any) => {
         const timestamp = `${new Date().toLocaleString('zh-CN', { hour12: false })}:${getMilliseconds()}`;
         const res = {
