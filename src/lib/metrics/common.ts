@@ -3,8 +3,8 @@ import METRIC from './constants';
 import { getCpuUsage } from '../star/cpu-usage';
 import v8 from 'v8';
 import MetricRegistry from './registry';
-import gc from 'gc-stats';
-import eventLoop from 'event-loop-stats';
+import { monitorEventLoopDelay } from 'monitor-event-loop-delay';
+import * as GCStats from '@sematext/gc-stats';
 
 /**
  * 注册通用指标
@@ -430,57 +430,91 @@ function registerCommonMetrics(registry: MetricRegistry) {
  */
 function startGCWatcher(registry: MetricRegistry) {
   try {
-    const gcStat = gc();
+    // 注册垃圾回收相关指标
+    registry.register({
+      name: METRIC.PROCESS_GC_TIME,
+      type: METRIC.TYPE_GAUGE,
+      unit: METRIC.UNIT_MILLISECONDS,
+      description: '垃圾回收时间'
+    });
 
-    if (gcStat) {
-      registry.register({
-        name: METRIC.PROCESS_GC_TIME,
-        type: METRIC.TYPE_GAUGE,
-        unit: METRIC.UNIT_NANOSECONDS,
-        description: '垃圾回收时间'
-      });
+    registry.register({
+      name: METRIC.PROCESS_GC_TOTAL_TIME,
+      type: METRIC.TYPE_COUNTER,
+      unit: METRIC.UNIT_MILLISECONDS,
+      description: '所有的垃圾回收花费时间'
+    });
 
-      registry.register({
-        name: METRIC.PROCESS_GC_TOTAL_TIME,
-        type: METRIC.TYPE_GAUGE,
-        unit: METRIC.UNIT_MILLISECONDS,
-        description: '所有的垃圾回收花费时间'
-      });
+    registry.register({
+      name: METRIC.PROCESS_GC_EXECUTED_TOTAL,
+      type: METRIC.TYPE_COUNTER,
+      labelNames: ['type'],
+      description: '执行垃圾回收的数量'
+    });
 
-      registry.register({
-        name: METRIC.PROCESS_GC_EXECUTED_TOTAL,
-        type: METRIC.TYPE_GAUGE,
-        labelNames: ['type'],
-        description: '执行垃圾回收的数量'
-      });
+    // 创建GC统计实例
+    const gc: GCStats.GCStatsEventEmitter = GCStats.default();
 
-      gcStat.on('stats', (stats) => {
-        registry.set(METRIC.PROCESS_GC_TIME, stats.pause);
-        registry.increment(METRIC.PROCESS_GC_TOTAL_TIME, null, stats.pause / 1e6);
-        if (stats.gctype === 1) {
-          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: 'scavenge' });
-        }
-        if (stats.gctype === 2) {
-          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: 'marksweep' });
-        }
-        if (stats.gctype === 4) {
-          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: 'incremental' });
-        }
-        if (stats.gctype === 8) {
-          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: 'weakphantom' });
-        }
-        if (stats.gctype === 15) {
-          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: 'scavenge' });
-          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: 'marksweep' });
-          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: 'incremental' });
-          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: 'weakphantom' });
-        }
-      });
-    }
+    // 监听GC事件
+    gc.on('stats', (stats: GCStats.GCStatistics) => {
+      // 设置当前GC时间（转换为毫秒）
+      const pauseMS = stats.pauseMS;
+      registry.set(METRIC.PROCESS_GC_TIME, pauseMS);
+
+      // 累加总GC时间
+      registry.increment(METRIC.PROCESS_GC_TOTAL_TIME, null, pauseMS);
+
+      // 根据GC类型增加计数
+      let gcType: string;
+      switch (stats.gctype) {
+        case 1:
+          gcType = 'scavenge';
+          break;
+        case 2:
+          gcType = 'mark-sweep-compact';
+          break;
+        case 4:
+          gcType = 'incremental-marking';
+          break;
+        case 8:
+          gcType = 'weak-phantom';
+          break;
+        case 15:
+          gcType = 'all';
+          break;
+        default:
+          gcType = `type-${stats.gctype}`;
+      }
+
+      registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: gcType });
+    });
   } catch (error) {
-    // silent
+    console.warn('Failed to initialize GC stats monitoring:', error);
+    // 如果GC统计初始化失败，使用基本的堆内存监控作为备选方案
+    registry.register({
+      name: METRIC.PROCESS_MEMORY_HEAP_SIZE_USED,
+      type: METRIC.TYPE_GAUGE,
+      unit: METRIC.UNIT_BYTE,
+      description: '已使用的堆内存'
+    });
+
+    registry.register({
+      name: METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL,
+      type: METRIC.TYPE_GAUGE,
+      unit: METRIC.UNIT_BYTE,
+      description: '总堆内存'
+    });
+
+    // 定时收集堆统计信息
+    setInterval(() => {
+      const heapStats = v8.getHeapStatistics();
+      registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_USED, heapStats.used_heap_size);
+      registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL, heapStats.total_heap_size);
+    }, 1000);
   }
 }
+
+let eventLoopMonitor: any = null;
 
 function startEventLoopStats(registry: MetricRegistry) {
   try {
@@ -507,6 +541,10 @@ function startEventLoopStats(registry: MetricRegistry) {
       type: METRIC.TYPE_GAUGE,
       description: '事件循环延迟数量'
     });
+
+    // 初始化事件循环监控器
+    eventLoopMonitor = monitorEventLoopDelay({ resolution: 20 });
+    eventLoopMonitor.enable();
   } catch (error) {
     // silent
   }
@@ -621,12 +659,15 @@ function updateCommonMetrics(registry: MetricRegistry) {
   registry.set(METRIC.OS_CPU_LOAD_5, load[1]);
   registry.set(METRIC.OS_CPU_LOAD_15, load[2]);
 
-  if (eventLoop && (eventLoop as any).sense) {
-    const stat = eventLoop.sense();
-    registry.set(METRIC.PROCESS_EVENTLOOP_LAG_MIN, stat.min);
-    registry.set(METRIC.PROCESS_EVENTLOOP_LAG_AVG, stat.num ? stat.sum / stat.num : 0);
-    registry.set(METRIC.PROCESS_EVENTLOOP_LAG_MAX, stat.max);
-    registry.set(METRIC.PROCESS_EVENTLOOP_LAG_COUNT, stat.num);
+  if (eventLoopMonitor) {
+    try {
+      registry.set(METRIC.PROCESS_EVENTLOOP_LAG_MIN, eventLoopMonitor.min / 1000000); // 转换为毫秒
+      registry.set(METRIC.PROCESS_EVENTLOOP_LAG_AVG, eventLoopMonitor.mean / 1000000); // 转换为毫秒
+      registry.set(METRIC.PROCESS_EVENTLOOP_LAG_MAX, eventLoopMonitor.max / 1000000); // 转换为毫秒
+      registry.set(METRIC.PROCESS_EVENTLOOP_LAG_COUNT, eventLoopMonitor.count);
+    } catch (error) {
+      // silent
+    }
   }
 
   const duration = end();

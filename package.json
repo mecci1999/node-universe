@@ -15,12 +15,12 @@
     "@commitlint/config-conventional": "^17.6.3",
     "@rollup/plugin-alias": "^5.1.1",
     "@rollup/plugin-json": "^6.1.0",
-    "@types/gc-stats": "^1.4.3",
     "@types/lodash": "^4.14.195",
     "@types/msgpack5": "^3.4.3",
     "@types/node": "^20.4.2",
     "@types/node-fetch": "^2.6.11",
     "@types/pino": "^7.0.5",
+    "@types/sematext__gc-stats": "^1.4.3",
     "husky": "^8.0.3",
     "nodemon": "^2.0.22",
     "rollup": "^3.6.0",
@@ -35,13 +35,12 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
+    "@sematext/gc-stats": "^1.4.0",
     "cbor-x": "^1.5.3",
     "crypto": "^1.0.1",
     "etcd3": "^1.1.2",
-    "event-loop-stats": "^1.4.1",
     "eventemitter2": "^6.4.9",
     "fastest-validator": "^1.17.0",
-    "gc-stats": "^1.4.0",
     "glob": "^10.3.10",
     "ioredis": "^5.3.2",
     "ipaddr.js": "^2.1.0",
@@ -50,6 +49,7 @@
     "lodash": "^4.17.21",
     "log4js": "^6.9.1",
     "lru-cache": "^10.0.1",
+    "monitor-event-loop-delay": "^1.0.0",
     "node-fetch": "2.7.0",
     "notepack.io": "^3.0.1",
     "pino": "^8.14.1",
@@ -123,7 +123,7 @@
     }
   },
   "volta": {
-   "node": "22.14.0",
-   "npm": "10.9.2"
+    "node": "22.14.0",
+    "npm": "10.9.2"
   }
 }
