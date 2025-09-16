@@ -4,7 +4,7 @@ import { getCpuUsage } from '../star/cpu-usage';
 import v8 from 'v8';
 import MetricRegistry from './registry';
 import { monitorEventLoopDelay } from 'monitor-event-loop-delay';
-import * as GCStats from '@sematext/gc-stats';
+import { PerformanceObserver } from 'perf_hooks';
 
 /**
  * 注册通用指标
@@ -426,7 +426,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
 }
 
 /**
- * 开启垃圾回收监听器
+ * 开启垃圾回收监听器（使用Performance API）
  */
 function startGCWatcher(registry: MetricRegistry) {
   try {
@@ -452,67 +452,74 @@ function startGCWatcher(registry: MetricRegistry) {
       description: '执行垃圾回收的数量'
     });
 
-    // 创建GC统计实例
-    const gc: GCStats.GCStatsEventEmitter = GCStats.default();
-
-    // 监听GC事件
-    gc.on('stats', (stats: GCStats.GCStatistics) => {
-      // 设置当前GC时间（转换为毫秒）
-      const pauseMS = stats.pauseMS;
-      registry.set(METRIC.PROCESS_GC_TIME, pauseMS);
-
-      // 累加总GC时间
-      registry.increment(METRIC.PROCESS_GC_TOTAL_TIME, null, pauseMS);
-
-      // 根据GC类型增加计数
-      let gcType: string;
-      switch (stats.gctype) {
-        case 1:
-          gcType = 'scavenge';
-          break;
-        case 2:
-          gcType = 'mark-sweep-compact';
-          break;
-        case 4:
-          gcType = 'incremental-marking';
-          break;
-        case 8:
-          gcType = 'weak-phantom';
-          break;
-        case 15:
-          gcType = 'all';
-          break;
-        default:
-          gcType = `type-${stats.gctype}`;
+    // 使用Performance API监控GC事件
+    const obs = new PerformanceObserver((list) => {
+      const entries = list.getEntries();
+      for (const entry of entries) {
+        if (entry.entryType === 'gc') {
+          const gcEntry = entry as any;
+          const duration = gcEntry.duration;
+          
+          // 设置当前GC时间
+          registry.set(METRIC.PROCESS_GC_TIME, duration);
+          
+          // 累加总GC时间
+          registry.increment(METRIC.PROCESS_GC_TOTAL_TIME, null, duration);
+          
+          // 根据GC类型增加计数
+          const gcType = gcEntry.kind || 'unknown';
+          registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: gcType });
+        }
       }
-
-      registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: gcType });
     });
+    
+    // 开始观察GC事件
+    obs.observe({ entryTypes: ['gc'] });
+    
+    registry.logger.debug('GC monitoring started using Performance API');
   } catch (error) {
-    console.warn('Failed to initialize GC stats monitoring:', error);
-    // 如果GC统计初始化失败，使用基本的堆内存监控作为备选方案
-    registry.register({
-      name: METRIC.PROCESS_MEMORY_HEAP_SIZE_USED,
-      type: METRIC.TYPE_GAUGE,
-      unit: METRIC.UNIT_BYTE,
-      description: '已使用的堆内存'
-    });
-
-    registry.register({
-      name: METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL,
-      type: METRIC.TYPE_GAUGE,
-      unit: METRIC.UNIT_BYTE,
-      description: '总堆内存'
-    });
-
-    // 定时收集堆统计信息
-    setInterval(() => {
-      const heapStats = v8.getHeapStatistics();
-      registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_USED, heapStats.used_heap_size);
-      registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL, heapStats.total_heap_size);
-    }, 1000);
+    registry.logger.warn('Failed to initialize GC stats monitoring:', error);
+    // 如果Performance API不可用，使用基本的堆内存监控作为备选方案
+    startAlternativeHeapMonitoring(registry);
   }
 }
+
+/**
+ * 替代的堆内存监控方案（适用于Node.js v22+）
+ */
+function startAlternativeHeapMonitoring(registry: MetricRegistry) {
+  try {
+    // 注册基本堆内存指标
+     registry.register({
+       name: METRIC.PROCESS_MEMORY_HEAP_SIZE_USED,
+       type: METRIC.TYPE_GAUGE,
+       unit: METRIC.UNIT_BYTE,
+       description: '进程内存堆已使用大小'
+     });
+ 
+     registry.register({
+       name: METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL,
+       type: METRIC.TYPE_GAUGE,
+       unit: METRIC.UNIT_BYTE,
+       description: '进程内存堆总大小'
+     });
+ 
+     // 使用定时器定期更新堆内存统计
+     const heapStatsInterval = setInterval(() => {
+       try {
+         const heapStats = v8.getHeapStatistics();
+         registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_USED, heapStats.used_heap_size);
+         registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL, heapStats.total_heap_size);
+       } catch (err) {
+         registry.logger.warn('Failed to collect heap statistics:', err);
+       }
+     }, 5000); // 每5秒更新一次
+ 
+     registry.logger.info('Alternative heap monitoring started (Node.js v22+ compatible)');
+   } catch (error) {
+     registry.logger.warn('Failed to start alternative heap monitoring:', error);
+   }
+ }
 
 let eventLoopMonitor: any = null;
 
