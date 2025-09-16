@@ -2,7 +2,17 @@
   "extends": "./tsconfig.json",
   "baseUrl": "./src",
   "compilerOptions": {
-    "module": "ESNext"
+    "module": "ESNext",
+    "target": "ES2018",
+    "moduleResolution": "node",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "removeComments": true,
+    "importHelpers": true,
+    "skipLibCheck": true,
+    "strict": true
   },
-  "include": ["./src"]
+  "include": ["./src"],
+  "exclude": ["./src/**/*.test.ts", "./src/**/*.spec.ts"]
 }

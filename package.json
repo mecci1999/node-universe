@@ -55,6 +55,7 @@
     "pino": "^8.14.1",
     "recursive-watch": "^1.1.4",
     "redlock": "4.2.0",
+    "tslib": "^2.8.1",
     "zlib": "^1.0.5"
   },
   "peerDependenciesMeta": {
