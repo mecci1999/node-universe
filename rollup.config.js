@@ -21,16 +21,14 @@ module.exports = [
     external,
     output: [
       {
-        dir: './dist',
+        file: './dist/index.js',
         format: 'cjs',
-        entryFileNames: '[name].js',
         compact: true,
         exports: 'auto'
       },
       {
-        dir: './dist',
+        file: './dist/index.esm.js',
         format: 'esm',
-        entryFileNames: '[name].esm.js',
         compact: true,
       }
     ],
@@ -63,6 +61,7 @@ module.exports = [
   },
   {
     input: 'src/index.ts',
+    external,
     output: [{ file: 'dist/index.d.ts', format: 'es' }],
     plugins: [
       dts.default({
@@ -70,10 +69,10 @@ module.exports = [
           emitDeclarationOnly: true,
           resolveJsonModule: true,
           declaration: true,
-          declarationDir: null,
           composite: false
         },
-        outputAsModuleFolder: false,
+        respectExternal: true,
+        rollupTypes: true,
         tsconfig: './tsconfig.build.json'
       })
     ]
