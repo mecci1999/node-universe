@@ -1,30 +1,54 @@
 import { GenericObject } from '@/typings';
 import BaseTransporter from './base';
-import Kafka, { KafkaClient, Producer, ConsumerGroup } from 'kafka-node';
+import { Kafka, Producer, Consumer, Admin } from 'kafkajs';
 import _ from 'lodash';
 import { PacketTypes } from '@/typings/packets';
 import C from '../star/constants';
 
 export default class KafkaTransporter extends BaseTransporter {
-  public client: KafkaClient | null;
+  public client: Kafka | null;
   public producer: Producer | null;
-  public consumer: ConsumerGroup | null;
+  public consumer: Consumer | null;
+  public admin: Admin | null;
 
   constructor(options: any) {
     if (typeof options === 'string') {
-      options = { host: options.replace('kafka://', '') };
+      options = { brokers: [options.replace('kafka://', '')] };
     } else if (options == null) {
       options = {};
     }
 
-    options = _.defaultsDeep(options, {
-      client: { kafkaHost: options.host },
-      producer: {},
-      customPartitioner: undefined,
-      consumer: {},
+    // 处理嵌套的options结构
+    let kafkaOptions = options.options || {};
+    
+    // 合并外层和内层配置
+    const mergedOptions = {
+      ...options,
+      ...kafkaOptions,
+      brokers: options.host ? [options.host] : (kafkaOptions.brokers || ['localhost:9092']),
+      ssl: kafkaOptions.ssl !== undefined ? kafkaOptions.ssl : false,
+      sasl: kafkaOptions.sasl || null
+    };
+
+    options = _.defaultsDeep(mergedOptions, {
+      brokers: ['localhost:9092'],
+      clientId: 'node-universe-kafka-client',
+      ssl: false,
+      sasl: null,
+      connectionTimeout: 3000,
+      requestTimeout: 30000,
+      producer: {
+        maxInFlightRequests: 1,
+        idempotent: false,
+        transactionTimeout: 30000
+      },
+      consumer: {
+        groupId: 'node-universe-group',
+        sessionTimeout: 30000,
+        heartbeatInterval: 3000
+      },
       publish: {
-        partition: 0,
-        attributes: 0
+        partition: 0
       }
     });
 
@@ -33,155 +57,179 @@ export default class KafkaTransporter extends BaseTransporter {
     this.client = null;
     this.producer = null;
     this.consumer = null;
+    this.admin = null;
   }
 
   /**
    * 连接
    */
-  public connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
+  public async connect(): Promise<void> {
+    try {
       // 创建kafka实例
-      this.client = new Kafka.KafkaClient(this.options.client);
+      const kafkaConfig: any = {
+        clientId: this.options.clientId,
+        brokers: this.options.brokers,
+        connectionTimeout: this.options.connectionTimeout,
+        requestTimeout: this.options.requestTimeout
+      };
+
+      // 添加SSL配置
+      if (this.options.ssl) {
+        kafkaConfig.ssl = this.options.ssl;
+      }
+
+      // 添加SASL认证配置
+      if (this.options.sasl) {
+        kafkaConfig.sasl = this.options.sasl;
+      }
+
+      this.client = new Kafka(kafkaConfig);
 
       // 创建生产者
-      this.producer = new Kafka.Producer(this.client, this.options.producer, this.options.customPartitioner);
+      this.producer = this.client.producer(this.options.producer);
+      
+      // 创建管理员客户端
+      this.admin = this.client.admin();
 
-      this.producer.on('ready', () => {
-        this.logger?.info('Kafka client is connected.');
-        this.onConnected().then(resolve);
-      });
+      // 连接生产者
+      await this.producer.connect();
+      
+      // 连接管理员客户端
+      await this.admin.connect();
 
-      this.producer.on('error', (error) => {
-        this.logger?.error('Kafka Producer error', error.message);
-        this.logger?.debug('Kafka Producer error', error);
-        // 广播错误
-        this.star?.broadcastLocal('$transporter.error', {
-          error,
-          module: 'transporter',
-          type: C.FAILED_PUBLISHER_ERROR
-        });
-
-        if (!this.connected) reject(error);
-      });
-    });
+      this.logger?.info('Kafka client is connected.');
+      await this.onConnected();
+    } catch (error: any) {
+       this.logger?.error('Kafka Producer error', error.message);
+       this.logger?.debug('Kafka Producer error', error);
+       // 广播错误
+       this.star?.broadcastLocal('$transporter.error', {
+         error,
+         module: 'transporter',
+         type: C.FAILED_PUBLISHER_ERROR
+       });
+       throw error;
+     }
   }
 
   /**
    * 断开连接
    */
-  public disconnect(): void {
-    if (this.client) {
-      this.client.close(() => {
-        this.client = null;
+  public async disconnect(): Promise<void> {
+    try {
+      if (this.producer) {
+        await this.producer.disconnect();
         this.producer = null;
+      }
 
-        if (this.consumer) {
-          this.consumer.close(() => {
-            this.consumer = null;
-          });
-        }
-      });
+      if (this.consumer) {
+        await this.consumer.disconnect();
+        this.consumer = null;
+      }
+
+      if (this.admin) {
+        await this.admin.disconnect();
+        this.admin = null;
+      }
+
+      this.client = null;
+    } catch (error: any) {
+      this.logger?.error('Kafka disconnect error', error.message);
     }
   }
 
   /**
    * 订阅动作
    */
-  public makeSubscriptions(topics: GenericObject[]): Promise<void> {
+  public async makeSubscriptions(topics: GenericObject[]): Promise<void> {
     const topicsMap = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
 
-    return new Promise((resolve, reject) => {
-      // 生产者创建topic
-      this.producer?.createTopics(topicsMap, true, (error) => {
-        if (error) {
-          this.logger?.error('Unable to create topics!', topics, error);
-          // 广播错误
-          this.star?.broadcastLocal('$transporter.error', {
-            error,
-            module: 'transporter',
-            type: C.FAILED_TOPIC_CREATION
-          });
+    try {
+      // 使用管理员客户端创建topics
+      if (this.admin) {
+        await this.admin.createTopics({
+          topics: topicsMap.map(topic => ({
+            topic,
+            numPartitions: 1,
+            replicationFactor: 1
+          }))
+        });
+      }
 
-          return reject(error);
-        }
-
-        // 消费者配置
+      // 创建消费者实例
+      if (this.client) {
         const consumerOptions = Object.assign(
           {
-            id: 'default-kafka-consumer',
-            kafkaHost: this.options.host,
-            groupId: this.star?.instanceID,
-            fromOffset: 'latest',
-            encoding: 'buffer'
+            groupId: this.star?.instanceID || 'node-universe-group'
           },
           this.options.consumer
         );
 
-        // 创建消费者实例
-        this.consumer = new Kafka.ConsumerGroup(consumerOptions, topicsMap);
+        this.consumer = this.client.consumer(consumerOptions);
 
-        this.consumer.on('error', (error) => {
-          this.logger?.error('Kafka Consumer error', error.message);
-          this.logger?.debug('Kafka Consumer error', error);
+        // 连接消费者
+        await this.consumer.connect();
 
-          // 广播错误
-          this.star?.broadcastLocal('$transporter.error', {
-            error,
-            module: 'transporter',
-            type: C.FAILED_CONSUMER_ERROR
-          });
+        // 订阅topics
+        for (const topic of topicsMap) {
+          await this.consumer.subscribe({ topic, fromBeginning: false });
+        }
 
-          if (!this.connected) reject(error);
+        // 开始消费消息
+        await this.consumer.run({
+          eachMessage: async ({ topic, partition, message }) => {
+            try {
+              const cmd = topic.split('.')[1] as PacketTypes;
+              if (message.value) {
+                this.receive(cmd, message.value as Buffer);
+              }
+            } catch (error: any) {
+              this.logger?.error('Error processing message', error);
+            }
+          }
         });
 
-        this.consumer.on('message', (message) => {
-          const topic = message.topic;
-          const cmd = topic.split('.')[1] as PacketTypes;
-          this.receive(cmd, message.value as Buffer);
-        });
-
-        // 注意：这里如果一直在连接中，会导致进程一直卡在连接kafka中
-        this.consumer.on('connect', () => {
-          this.logger?.info(`KAFKA Consumer connected is success!`);
-          resolve();
-        });
+        this.logger?.info(`KAFKA Consumer connected and subscribed to topics: ${topicsMap.join(', ')}`);
+      }
+    } catch (error: any) {
+      this.logger?.error('Unable to create topics or setup consumer!', topics, error);
+      // 广播错误
+      this.star?.broadcastLocal('$transporter.error', {
+        error,
+        module: 'transporter',
+        type: C.FAILED_TOPIC_CREATION
       });
-    });
+      throw error;
+    }
   }
 
   /**
    * 发送动作
    */
-  public send(topic: string, data: Buffer, { packet }): Promise<void> {
-    if (!this.client) return Promise.resolve();
+  public async send(topic: string, data: Buffer, { packet }): Promise<void> {
+    if (!this.producer) return Promise.resolve();
 
-    return new Promise((resolve, reject) => {
-      this.producer?.send(
-        [
+    try {
+      await this.producer.send({
+        topic: this.getTopicName(packet.type, packet.target),
+        messages: [
           {
-            topic: this.getTopicName(packet.type, packet.target),
-            messages: [data],
             partition: this.options.publish.partition,
-            attributes: this.options.publish.attributes
+            value: data
           }
-        ],
-        (error) => {
-          if (error) {
-            this.logger?.error('Kafka Server Publish error', error);
+        ]
+      });
+    } catch (error: any) {
+      this.logger?.error('Kafka Server Publish error', error);
 
-            // 广播错误
-            this.star?.broadcastLocal('$transporter.error', {
-              error,
-              module: 'transporter',
-              type: C.FAILED_PUBLISHER_ERROR
-            });
+      // 广播错误
+      this.star?.broadcastLocal('$transporter.error', {
+        error,
+        module: 'transporter',
+        type: C.FAILED_PUBLISHER_ERROR
+      });
 
-            reject(error);
-          }
-
-          resolve();
-        }
-      );
-    });
+      throw error;
+    }
   }
 }
