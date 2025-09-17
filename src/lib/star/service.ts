@@ -1,32 +1,25 @@
 import { GenericObject } from '@/typings';
 import { UniverseErrorCode, UniverseErrorOptionsType } from '@/typings/error';
 import { LoggerInstance } from '@/typings/logger';
-import { ServiceDependency, ServiceSchema as OriginalServiceSchema, ServiceSettingSchema } from '@/typings/service';
+import { ServiceSchema as OriginalServiceSchema, ServiceDependency, ServiceSettingSchema } from '@/typings/service';
 import { ServiceActions } from '@/typings/star/service';
 import {
+  BoundaryChecker,
   CloneOptimizer,
   deprecate,
   EnhancedErrorHandler,
-  ErrorRecoveryStrategy,
   functionArguments,
+  InputValidator,
   isFunction,
   isNewSignature,
   isObject,
   performanceMonitor,
   promiseMethod,
-  wrapToArray,
-  wrapToHandler,
+  SecurityChecker,
   TypeValidator,
-  isServiceSchema,
-  assertServiceSchema,
-  assertMethodDefinition,
-  assertActionDefinition,
-  assertEventDefinition,
-  InputValidator,
-  BoundaryChecker,
-  SecurityChecker
+  wrapToArray,
+  wrapToHandler
 } from '@/utils';
-import type { ServiceSchema as UtilsServiceSchema, MethodDefinition, ActionDefinition, EventDefinition } from '@/utils';
 import _, { flatten } from 'lodash';
 import Star from '.';
 import { ServiceSchemaError, UniverseError } from '../error';
@@ -713,84 +706,73 @@ export default class Service<S = ServiceSettingSchema> {
    * @throws {Error} 当停止过程中发生错误时抛出
    * @public
    */
-  public _stop() {
+  public async _stop(): Promise<void> {
     this.logger?.debug(`Service '${this.fullName}' is stopping...`, {
       serviceName: this.name,
       version: this.version,
       hasStoppedHook: !!(this.schema?.stopped)
     });
 
-    return Promise.resolve()
-      .then(() => {
-        this.logger?.debug('调用serviceStopping中间件', {
-          serviceName: this.fullName,
-          reverse: true
-        });
-        return this.star.callMiddlewareHook('serviceStopping', [this], { reverse: true });
-      })
-      .then(() => {
-        if (isFunction(this.schema?.stopped)) {
-          this.logger?.debug('执行stopped钩子函数', {
-            serviceName: this.fullName,
-            hookType: 'function'
-          });
-          return promiseMethod(this.schema?.stopped as any).call(this);
-        }
-
-        if (this.schema?.stopped && Array.isArray(this.schema?.stopped)) {
-          this.logger?.debug('执行stopped钩子函数数组', {
-            serviceName: this.fullName,
-            hookType: 'array',
-            hookCount: this.schema.stopped.length,
-            reversed: true
-          });
-          const arr = Array.from(this.schema.stopped).reverse();
-
-          return arr
-            .map((fn, index) => {
-              if (fn && isFunction(fn)) {
-                this.logger?.debug(`准备执行第${index + 1}个stopped钩子（倒序）`, {
-                  serviceName: this.fullName,
-                  hookIndex: index
-                });
-                return promiseMethod(fn.bind(this));
-              }
-            })
-            .reduce((p, fn) => p.then(() => fn()), Promise.resolve());
-        }
-
-        return Promise.resolve();
-      })
-      .then(() => {
-        this.logger?.debug('调用serviceStopped中间件', {
-          serviceName: this.fullName,
-          reverse: true
-        });
-        return this.star.callMiddlewareHook('serviceStopped', [this], { reverse: true });
-      })
-      .then(() => {
-        // 内存管理：清理服务资源
-        this._cleanupServiceResources();
-        
-        this.logger?.info(`Service '${this.fullName}' stopped.`, {
-          serviceName: this.name,
-          version: this.version,
-          fullName: this.fullName,
-          shutdownComplete: true
-        });
-      })
-      .catch((error) => {
-        this.logger?.error('服务停止过程中发生错误', {
-          serviceName: this.fullName,
-          error: error.message,
-          stack: error.stack
-        });
-        
-        // 即使出错也要清理资源
-        this._cleanupServiceResources();
-        
-        throw error;
+    try {
+      this.logger?.debug('调用serviceStopping中间件', {
+        serviceName: this.fullName,
+        reverse: true
       });
+      await this.star.callMiddlewareHook('serviceStopping', [this], { reverse: true });
+
+      if (isFunction(this.schema?.stopped)) {
+        this.logger?.debug('执行stopped钩子函数', {
+          serviceName: this.fullName,
+          hookType: 'function'
+        });
+        await promiseMethod(this.schema?.stopped as any).call(this);
+      } else if (this.schema?.stopped && Array.isArray(this.schema?.stopped)) {
+        this.logger?.debug('执行stopped钩子函数数组', {
+          serviceName: this.fullName,
+          hookType: 'array',
+          hookCount: this.schema.stopped.length,
+          reversed: true
+        });
+        const arr = Array.from(this.schema.stopped).reverse();
+
+        for (const [index, fn] of arr.entries()) {
+          if (fn && isFunction(fn)) {
+            this.logger?.debug(`准备执行第${index + 1}个stopped钩子（倒序）`, {
+              serviceName: this.fullName,
+              hookIndex: index
+            });
+            await promiseMethod(fn.bind(this))();
+          }
+        }
+      }
+
+      this.logger?.debug('调用serviceStopped中间件', {
+        serviceName: this.fullName,
+        reverse: true
+      });
+      await this.star.callMiddlewareHook('serviceStopped', [this], { reverse: true });
+
+      // 内存管理：清理服务资源
+      this._cleanupServiceResources();
+      
+      this.logger?.info(`Service '${this.fullName}' stopped.`, {
+        serviceName: this.name,
+        version: this.version,
+        fullName: this.fullName,
+        shutdownComplete: true
+      });
+    } catch (error: any) {
+       this.logger?.error('服务停止过程中发生错误', {
+         serviceName: this.fullName,
+         error: error.message,
+         stack: error.stack
+       });
+      
+      // 即使出错也要清理资源
+      this._cleanupServiceResources();
+      
+      throw error;
+    }
   }
 
   /**

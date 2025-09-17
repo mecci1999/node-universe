@@ -18,7 +18,7 @@ import {
   removeFromArray,
   sleep
 } from '@/utils';
-import EventEmitter2 from 'eventemitter2';
+import EventEmitter3 from 'eventemitter3';
 import _, { isObject } from 'lodash';
 import Context from '../context';
 import { Regenerator, ServiceNotFoundError, resolveRengerator } from '../error';
@@ -197,163 +197,73 @@ export default class Star {
   public validator: Validator | null = null;
   public tracer: Tracer | null = null;
   public middlewares: MiddlewareHandler | null = null;
-  public services: Service[] = [];
+  private _servicesMap: Map<string, Service> = new Map();
+  private _servicesArray: Service[] = [];
+
+  // 服务管理的getter，保持向后兼容
+  public get services(): Service[] {
+    return this._servicesArray;
+  }
+
+  // 服务管理辅助方法
+  private _addServiceToMap(service: Service): void {
+    const key = service.fullName || `${service.name}@${service.version}`;
+    this._servicesMap.set(key, service);
+    this._servicesArray.push(service);
+  }
+
+  private _removeServiceFromMap(service: Service): boolean {
+    const key = service.fullName || `${service.name}@${service.version}`;
+    const removed = this._servicesMap.delete(key);
+    if (removed) {
+      const index = this._servicesArray.indexOf(service);
+      if (index > -1) {
+        this._servicesArray.splice(index, 1);
+      }
+    }
+    return removed;
+  }
+
+  private _getServiceFromMap(name: string): Service | undefined {
+    return this._servicesMap.get(name);
+  }
+
+  private _findServiceInMap(predicate: (service: Service) => boolean): Service | undefined {
+    for (const service of this._servicesMap.values()) {
+      if (predicate(service)) {
+        return service;
+      }
+    }
+    return undefined;
+  }
+  
+
+
+
+
+
+
+
+
+
+
+
 
   public _closeFn: any;
   public Promise: any;
-  public localBus: EventEmitter2 | null = null;
+  public localBus: EventEmitter3 | null = null;
 
   constructor(options: StarOptions) {
     try {
-      this.options = _.defaultsDeep(options, defaultOptions);
-
-      if (this.options.Promise) {
-        this.Promise = this.options.Promise;
-      } else {
-        this.Promise = Promise;
-      }
-      // 补充 Promise 方法
-      polyfillPromise(this.Promise);
-      // Star.Promise = this.Promise;
-
-      this.started = false;
-      this.stopping = false;
-
-      this.ServiceFactory = this.options.ServiceFactory || Service;
-      this.ContextFactory = this.options.ContextFactory || Context;
-
-      this.namespace = this.options.namespace || '';
-      this.metadata = this.options.metadata || {};
-      this.nodeID = this.options.nodeID || getNodeID();
-      this.instanceID = generateToken();
-
-      this.services = [];
-
-      // 本地通信服务
-      this.localBus = new EventEmitter2({ wildcard: true, maxListeners: 100 });
-
-      // 日志模块
-      this.loggerFactory = new LoggerFactory(this);
-      this.loggerFactory.init(this.options.logger || {});
-      this.logger = this.getLogger('star');
-      // 启动相关日志
-      if (this.logger) {
-        this.logger.info(`Universe V${Star.UNIVERSE_VERSION} is starting...`);
-        this.logger.info(`Star's namespace: ${this.namespace || '<not defined>'}`);
-        this.logger.info(`Star's node ID: ${this.nodeID}`);
-      }
-
-      // 性能指标模块
-      this.metrics = new MetricRegistry(this, this.options.metrics);
-      this.metrics.init();
-      // 注册指标参数
-      this.registerUniverseMetrics();
-
-      // 中间件处理模块
-      this.middlewares = new MiddlewareHandler(this);
-
-      // 服务注册模块
-      this.registry = new Registry(this);
-
-      // 缓存模块
-      this.cacher = Cachers.resolve(this.options.cacher);
-      if (this.cacher) {
-        // 初始化缓存模块
-        this.cacher.init(this);
-        const name = getConstructorName(this.cacher);
-        this.logger?.info(`Cacher: ${name}`);
-      }
-
-      // 序列化处理模块
-      this.serializer = Serializers.resolve(this.options.serializer as any);
-      if (this.serializer) (this.serializer as any).init(this);
-
-      // 错误处理机制模块
-      this.errorRegenerator = resolveRengerator(this.options.errorRegenerator);
-      this.errorRegenerator.init(this);
-
-      if (this.serializer) {
-        const serializerName = getConstructorName(this.serializer);
-        this.logger?.info(`Serializer: ${serializerName}`);
-      }
-
-      // 验证模块
-      if (this.options.validator) {
-        this.validator = Validators.resolve(this.options.validator);
-        if (this.validator) {
-          const validatorName = getConstructorName(this.validator);
-          this.logger?.info(`Validator: ${validatorName}`);
-          this.validator.init(this);
-        }
-      }
-
-      // 记录、跟踪服务模块
-      this.tracer = new Tracer(this, this.options.tracing || {});
-      this.tracer.init();
-
-      // 注册中间件
-      this.registerMiddlewares(this.options.middlewares);
-
-      // 通信传输模块
-      if (this.options.transporter) {
-        // 获取通信方式
-        const transporter: Transporter = Transporters.resolve(this.options.transporter);
-        this.transit = new Transit(this, transporter, this.options.transit);
-        const transitName = getConstructorName(transporter);
-        this.logger?.info(`Transporter: ${transitName}`);
-
-        if (this.options.disableBalancer) {
-          // 禁用负载均衡
-          if (transporter.hasBuiltInBalancer) {
-            this.logger?.info('The Star built-in balancer is DISABLED');
-          } else {
-            this.logger?.warn(`The ${transitName} has no built-in balancer. Star balancer is ENABLED.`);
-            this.options.disableBalancer = false;
-          }
-        }
-      }
-
-      // 是否禁用负载均衡
-      if (this.options.disableBalancer) {
-        // 禁用负载均衡模式
-        this.call = this.callWithoutBalancer;
-      }
-
-      // 防抖处理更新服务数据
-      const origLocalServiceChanged = this.localServiceChanged;
-      this.localServiceChanged = _.debounce(() => origLocalServiceChanged.call(this), 1000);
-
-      // 服务注册发现模块初始化
-      this.registry.init(this);
-
-      // 注册内部动作
-      if (this.options.internalServices) {
-        this.registerInternalServices(this.options.internalServices);
-      }
-
-      // 调用created中间件
-      this.callMiddlewareHookSync('created', [this]);
-
-      // 调用options中的created方法
-      if (this.options.created && isFunction(this.options.created)) this.options.created(this);
-
-      this._closeFn = () => {
-        this.stop()
-          .catch((err) => {
-            this.logger?.error(err);
-          })
-          .then(() => process.exit(0));
-      };
-
-      // 重置进程的监听器
-      process.setMaxListeners(0);
-
-      if (this.options.skipProcessEventRegistration === false) {
-        process.on('beforeExit', this._closeFn);
-        process.on('exit', this._closeFn);
-        process.on('SIGINT', this._closeFn);
-        process.on('SIGTERM', this._closeFn);
-      }
+      this._initializeOptions(options);
+      this._initializeCore();
+      this._initializeModules();
+      this._initializeFactories();
+      this._initializeMiddlewares();
+      this._initializeTransporter();
+      this._initializeBalancer();
+      this._finalizeInitialization();
+      this._registerProcessEvents();
     } catch (error) {
       // 输出错误日志，并结束程序
       if (this.logger) {
@@ -366,141 +276,672 @@ export default class Star {
   }
 
   /**
+   * 初始化配置选项
+   * @private
+   */
+  private _initializeOptions(options: StarOptions): void {
+    this.options = _.defaultsDeep(options, defaultOptions);
+
+    if (this.options.Promise) {
+      this.Promise = this.options.Promise;
+    } else {
+      this.Promise = Promise;
+    }
+    // 补充 Promise 方法
+    polyfillPromise(this.Promise);
+
+    this.started = false;
+    this.stopping = false;
+
+    this.namespace = this.options.namespace || '';
+    this.metadata = this.options.metadata || {};
+    this.nodeID = this.options.nodeID || getNodeID();
+    this.instanceID = generateToken();
+
+    // 初始化服务管理结构
+    this._servicesMap = new Map();
+    this._servicesArray = [];
+  }
+
+  /**
+   * 初始化核心组件
+   * @private
+   */
+  private _initializeCore(): void {
+    // 本地通信服务
+    this.localBus = new EventEmitter3();
+
+    // 日志模块
+    this.loggerFactory = new LoggerFactory(this);
+    this.loggerFactory.init(this.options.logger || {});
+    this.logger = this.getLogger('star');
+    // 启动相关日志
+    if (this.logger) {
+      this.logger.info(`Universe V${Star.UNIVERSE_VERSION} is starting...`);
+      this.logger.info(`Star's namespace: ${this.namespace || '<not defined>'}`);
+      this.logger.info(`Star's node ID: ${this.nodeID}`);
+    }
+
+
+
+    // 性能指标模块
+    this.metrics = new MetricRegistry(this, this.options.metrics);
+    this.metrics.init();
+    // 注册指标参数
+    this.registerUniverseMetrics();
+
+    // 中间件处理模块
+    this.middlewares = new MiddlewareHandler(this);
+
+    // 服务注册模块
+    this.registry = new Registry(this);
+  }
+
+  /**
+   * 初始化功能模块
+   * @private
+   */
+  private _initializeModules(): void {
+    // 缓存模块
+    this.cacher = Cachers.resolve(this.options.cacher);
+    if (this.cacher) {
+      // 初始化缓存模块
+      this.cacher.init(this);
+      const name = getConstructorName(this.cacher);
+      this.logger?.info(`Cacher: ${name}`);
+    }
+
+    // 序列化处理模块
+    this.serializer = Serializers.resolve(this.options.serializer as any);
+    if (this.serializer) (this.serializer as any).init(this);
+
+    // 错误处理机制模块
+     this.errorRegenerator = resolveRengerator(this.options.errorRegenerator);
+     if (this.errorRegenerator) {
+       this.errorRegenerator.init(this);
+     }
+
+    if (this.serializer) {
+      const serializerName = getConstructorName(this.serializer);
+      this.logger?.info(`Serializer: ${serializerName}`);
+    }
+
+    // 验证模块
+    if (this.options.validator) {
+      this.validator = Validators.resolve(this.options.validator);
+      if (this.validator) {
+        const validatorName = getConstructorName(this.validator);
+        this.logger?.info(`Validator: ${validatorName}`);
+        this.validator.init(this);
+      }
+    }
+
+    // 记录、跟踪服务模块
+     this.tracer = new Tracer(this, this.options.tracing || {});
+     if (this.tracer) {
+       this.tracer.init();
+     }
+  }
+
+  /**
+   * 初始化工厂类
+   * @private
+   */
+  private _initializeFactories(): void {
+    this.ServiceFactory = this.options.ServiceFactory || Service;
+    this.ContextFactory = this.options.ContextFactory || Context;
+  }
+
+  /**
+   * 初始化中间件
+   * @private
+   */
+  private _initializeMiddlewares(): void {
+    // 注册中间件
+    this.registerMiddlewares(this.options.middlewares);
+  }
+
+  /**
+   * 初始化传输器
+   * @private
+   */
+  private _initializeTransporter(): void {
+    // 通信传输模块
+    if (this.options.transporter) {
+      // 获取通信方式
+      const transporter: Transporter = Transporters.resolve(this.options.transporter);
+      this.transit = new Transit(this, transporter, this.options.transit);
+      const transitName = getConstructorName(transporter);
+      this.logger?.info(`Transporter: ${transitName}`);
+
+      if (this.options.disableBalancer) {
+        // 禁用负载均衡
+        if (transporter.hasBuiltInBalancer) {
+          this.logger?.info('The Star built-in balancer is DISABLED');
+        } else {
+          this.logger?.warn(`The ${transitName} has no built-in balancer. Star balancer is ENABLED.`);
+          this.options.disableBalancer = false;
+        }
+      }
+    }
+  }
+
+  /**
+   * 初始化负载均衡器
+   * @private
+   */
+  private _initializeBalancer(): void {
+    // 是否禁用负载均衡
+    if (this.options.disableBalancer) {
+      // 禁用负载均衡模式
+      this.call = this.callWithoutBalancer;
+    }
+  }
+
+  /**
+   * 完成初始化
+   * @private
+   */
+  private _finalizeInitialization(): void {
+    // 防抖处理更新服务数据
+    const origLocalServiceChanged = this.localServiceChanged;
+    this.localServiceChanged = _.debounce(() => origLocalServiceChanged.call(this), 1000);
+
+    // 服务注册发现模块初始化
+     if (this.registry) {
+       this.registry.init(this);
+     }
+
+    // 注册内部动作
+    if (this.options.internalServices) {
+      this.registerInternalServices(this.options.internalServices);
+    }
+
+    // 调用created中间件
+    this.callMiddlewareHookSync('created', [this]);
+
+    // 调用options中的created方法
+    if (this.options.created && isFunction(this.options.created)) this.options.created(this);
+  }
+
+  /**
+   * 注册进程事件
+   * @private
+   */
+  private _registerProcessEvents(): void {
+    this._closeFn = () => {
+      this.stop()
+        .catch((err) => {
+          this.logger?.error(err);
+        })
+        .then(() => process.exit(0));
+    };
+
+    // 重置进程的监听器
+    process.setMaxListeners(0);
+
+    if (this.options.skipProcessEventRegistration === false) {
+      process.on('beforeExit', this._closeFn);
+      process.on('exit', this._closeFn);
+      process.on('SIGINT', this._closeFn);
+      process.on('SIGTERM', this._closeFn);
+    }
+  }
+
+  /**
    * 启动星球，如果通信模块创建了，将会触发通信模块的链接事件
    */
-  public start() {
+  /**
+   * 启动Star实例
+   * @returns Promise<void>
+   */
+  public async start(): Promise<void> {
     const startTime = Date.now();
 
-    return Promise.resolve()
-      .then(() => {
-        return this.callMiddlewareHook('starting', [this]);
-      })
-      .then(() => {
-        if (this.transit) {
-          return this.transit.connect().catch((error) => {
-            this.logger?.error('Unable to trasit connect ', error);
-          });
-        }
-      })
-      .then(() => {
-        // 启动所有的服务
-        return Promise.all(this.services.map((serivce) => serivce._start.call(serivce))).catch((error) => {
-          this.logger?.error('Unable to start all services.', error);
+    if (this.started) {
+      this.logger?.warn('Star is already started.');
+      return;
+    }
+
+    this.logger?.info('Starting Star...');
+
+    try {
+      await this._executeStartingHooks();
+      await this._connectTransit();
+      await this._startServices();
+      await this._finalizeStartup();
+      await this._executeStartedHooks();
+      await this._logStartupSuccess(startTime);
+    } catch (error) {
+      await this._handleStartupError(error);
+    }
+  }
+
+  /**
+   * 执行启动前的中间件钩子
+   * @private
+   */
+  private _executeStartingHooks(): Promise<void> {
+    try {
+      const result = this.callMiddlewareHook('starting', [this]);
+      if (result && typeof result.then === 'function') {
+        return result.then(() => undefined);
+      }
+      return Promise.resolve();
+    } catch (error) {
+      this.logger?.error('Error in starting middleware hook:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 连接传输层
+   * @private
+   */
+  private _connectTransit(): Promise<void> {
+    if (!this.transit) {
+      this.logger?.debug('No transit configured, skipping connection.');
+      return Promise.resolve();
+    }
+
+    this.logger?.debug('Connecting transit...');
+    return this.transit.connect().catch((error) => {
+      this.logger?.error('Unable to connect transit:', error);
+      throw error;
+    });
+  }
+
+  /**
+   * 启动所有服务
+   * @private
+   */
+  private _startServices(): Promise<void> {
+    if (this.services.length === 0) {
+      this.logger?.debug('No services to start.');
+      return Promise.resolve();
+    }
+
+    this.logger?.debug(`Starting ${this.services.length} service(s)...`);
+    return Promise.all(
+      this.services.map((service, index) => {
+        return service._start.call(service).catch((error) => {
+          this.logger?.error(`Failed to start service at index ${index}:`, error);
           throw error;
         });
       })
+    ).then(() => {
+      this.logger?.debug('All services started successfully.');
+    }).catch((error) => {
+      this.logger?.error('Unable to start all services:', error);
+      throw error;
+    });
+  }
+
+  /**
+   * 完成启动过程
+   * @private
+   */
+  private _finalizeStartup(): Promise<void> {
+    this.started = true;
+    
+    // 设置性能指标
+    this.metrics?.set(METRIC.UNIVERSE_STAR_STARTED, 1);
+    
+    // 广播启动事件
+    this.broadcastLocal('$star.started');
+    
+    // 等待传输层就绪
+    if (this.transit) {
+      this.logger?.debug('Waiting for transit to be ready...');
+      this.transit.ready();
+    }
+    return Promise.resolve();
+  }
+
+  /**
+   * 执行启动后的中间件钩子
+   * @private
+   */
+  private _executeStartedHooks(): Promise<void> {
+    return Promise.resolve()
       .then(() => {
-        this.started = true;
-        // 性能事件
-        this.metrics?.set(METRIC.UNIVERSE_STAR_STARTED, 1);
-        // 广播
-        this.broadcastLocal('$star.started');
+        try {
+          return this.callMiddlewareHook('started', [this]);
+        } catch (error) {
+          this.logger?.error('Error in started middleware hook:', error);
+          throw error;
+        }
       })
       .then(() => {
-        if (this.transit) return this.transit.ready();
-      })
-      .then(() => {
-        return this.callMiddlewareHook('started', [this]);
-      })
-      .then(() => {
-        if (this.options.started && isFunction(this.options.started)) return this.options.started(this);
-      })
-      .then(() => {
-        // 启动过程所花费的时间
-        const duration = Date.now() - startTime;
-        this.logger?.info(
-          kleur.green(`✔ Star with ${this.services.length} service(s) started successfully in ${humanize(duration)}`)
-        );
+        if (this.options.started && isFunction(this.options.started)) {
+          try {
+            return this.options.started(this);
+          } catch (error) {
+            this.logger?.error('Error in user started callback:', error);
+            throw error;
+          }
+        }
       });
   }
 
   /**
-   * 停止
+   * 记录启动成功信息
+   * @private
    */
-  public stop() {
+  private _logStartupSuccess(startTime: number): Promise<void> {
+    const duration = Date.now() - startTime;
+    this.logger?.info(
+      kleur.green(`✔ Star with ${this.services.length} service(s) started successfully in ${humanize(duration)}`)
+    );
+    return Promise.resolve();
+  }
+
+  /**
+   * 处理启动错误
+   * @private
+   */
+  private _handleStartupError(error: any): Promise<never> {
+    this.logger?.error('Failed to start Star:', error);
     this.started = false;
+    
+    // 尝试清理已初始化的组件
+    this._cleanupOnStartupFailure().catch((cleanupError) => {
+      this.logger?.error('Error during startup cleanup:', cleanupError);
+    });
+    
+    throw error;
+  }
+
+  /**
+   * 启动失败时的清理工作
+   * @private
+   */
+  private _cleanupOnStartupFailure(): Promise<void> {
+    const cleanupTasks: Promise<void>[] = [];
+    
+    if (this.transit) {
+      cleanupTasks.push(
+        this.transit.disconnect().catch((err) => {
+          this.logger?.error('Error disconnecting transit during cleanup:', err);
+        })
+      );
+    }
+    
+    // 停止已启动的服务
+    this.services.forEach((service) => {
+      if ((service as any).started) {
+        cleanupTasks.push(
+          service._stop.call(service).catch((err) => {
+            this.logger?.error(`Error stopping service during cleanup:`, err);
+          })
+        );
+      }
+    });
+    
+    return Promise.all(cleanupTasks).then(() => {});
+  }
+
+  /**
+   * 停止Star实例
+   * @returns Promise<void>
+   */
+  public async stop(): Promise<void> {
+    if (!this.started && !this.stopping) {
+      this.logger?.warn('Star is already stopped.');
+      return;
+    }
+
+    if (this.stopping) {
+      this.logger?.warn('Star is already stopping.');
+      return;
+    }
+
+    this.logger?.info('Stopping Star...');
+    this.started = false;
+    this.stopping = true;
+
+    try {
+      await this._prepareForShutdown();
+      await this._executeStoppingHooks();
+      await this._stopServices();
+      await this._shutdownComponents();
+      await this._executeStoppedHooks();
+      await this._finalizeShutdown();
+    } catch (error) {
+      await this._handleShutdownError(error);
+    } finally {
+      this.stopping = false;
+    }
+  }
+
+  /**
+   * 准备关闭
+   * @private
+   */
+  private _prepareForShutdown(): Promise<void> {
     return Promise.resolve()
       .then(() => {
-        if (this.transit) {
-          this.registry?.regenerateLocalRawInfo(true, true);
-          return this.registry?.discoverer.sendLocalNodeInfo();
+        if (this.transit && this.registry) {
+          this.logger?.debug('Regenerating local registry info...');
+          this.registry.regenerateLocalRawInfo(true, true);
+          this.registry.discoverer.sendLocalNodeInfo().catch(() => {});
         }
       })
       .then(() => {
         if (this.options.registry?.stopDelay) {
-          return sleep(this.options.registry.stopDelay);
+          this.logger?.debug(`Waiting ${this.options.registry.stopDelay}ms before shutdown...`);
+          return sleep(this.options.registry.stopDelay).then(() => {});
         }
       })
-      .then(() => {
-        this.stopping = true;
+      .catch((error) => {
+        this.logger?.error('Error during shutdown preparation:', error);
+        // 不抛出错误，继续关闭流程
+      });
+  }
 
-        return this.callMiddlewareHook('stopping', [this], { reverse: true });
-      })
-      .then(() => {
-        return Promise.all(this.services.map((service) => service._stop.call(service))).catch((error) => {
-          this.logger?.error('Unable to stop all services.', error);
+  /**
+   * 执行停止前的中间件钩子
+   * @private
+   */
+  private _executeStoppingHooks(): Promise<void> {
+    try {
+      this.logger?.debug('Executing stopping hooks...');
+      const result = this.callMiddlewareHook('stopping', [this], { reverse: true });
+      if (result && typeof result.then === 'function') {
+        return result.then(() => undefined);
+      }
+      return Promise.resolve();
+    } catch (error) {
+      this.logger?.error('Error in stopping middleware hook:', error);
+      // 不抛出错误，继续关闭流程
+      return Promise.resolve();
+    }
+  }
 
-          this.broadcastLocal('$star.error', {
-            error: error,
-            module: 'star',
-            type: C.FAILED_STOPPING_SERVICES
-          });
+  /**
+   * 停止所有服务
+   * @private
+   */
+  private _stopServices(): Promise<void> {
+    if (this.services.length === 0) {
+      this.logger?.debug('No services to stop.');
+      return Promise.resolve();
+    }
+
+    this.logger?.debug(`Stopping ${this.services.length} service(s)...`);
+    return Promise.all(
+      this.services.map((service, index) => {
+        return service._stop.call(service).catch((error) => {
+          this.logger?.error(`Failed to stop service at index ${index}:`, error);
+          // 记录错误但不阻止其他服务停止
+          return Promise.resolve();
         });
       })
-      .then(() => {
-        if (this.transit) {
-          return this.transit.disconnect();
-        }
-      })
-      .then(() => {
-        if (this.cacher) {
-          return this.cacher.close();
-        }
-      })
-      .then(() => {
-        if (this.metrics) {
-          return this.metrics.stop();
-        }
-      })
-      .then(() => {
-        if (this.tracer) {
-          return this.tracer.stop();
-        }
-      })
-      .then(() => {
-        return this.registry?.stop();
-      })
-      .then(() => {
-        return this.callMiddlewareHook('stopped', [this], { reverse: true });
-      })
-      .then(() => {
-        if (isFunction(this.options.stopped)) {
-          return (this.options.stopped as Function)(this);
-        }
-      })
-      .catch((err) => {
-        this.logger?.error(err);
-      })
-      .then(() => {
-        this.logger?.info('Star is stopped. Good bye.');
-        this.metrics?.set(METRIC.UNIVERSE_STAR_STARTED, 0);
-
-        this.broadcastLocal('$star.stopped');
-
-        if (this.options.skipProcessEventRegistration === false) {
-          // 取消监听器
-          process.removeListener('beforeExit', this._closeFn);
-          process.removeListener('exit', this._closeFn);
-          process.removeListener('SIGINT', this._closeFn);
-          process.removeListener('SIGTERM', this._closeFn);
-        }
-      })
-      .then(() => {
-        return (this.loggerFactory as LoggerFactory).stop();
-      })
-      .catch((err) => {
-        console.error('Star is stopped falid.', err);
+    ).then(() => {
+      this.logger?.debug('All services stop process completed.');
+    }).catch((error) => {
+      this.logger?.error('Error during services shutdown:', error);
+      this.broadcastLocal('$star.error', {
+        error: error,
+        module: 'star',
+        type: C.FAILED_STOPPING_SERVICES
       });
+      // 不抛出错误，继续关闭流程
+    });
+  }
+
+  /**
+   * 关闭各个组件
+   * @private
+   */
+  private _shutdownComponents(): Promise<void> {
+    const shutdownTasks: Array<() => Promise<void>> = [];
+
+    // 断开传输层连接
+     if (this.transit) {
+       shutdownTasks.push(() => {
+         this.logger?.debug('Disconnecting transit...');
+         return this.transit!.disconnect().catch((error) => {
+           this.logger?.error('Error disconnecting transit:', error);
+           return Promise.resolve();
+         });
+       });
+     }
+
+    // 关闭缓存
+    if (this.cacher) {
+      shutdownTasks.push(() => {
+        this.logger?.debug('Closing cacher...');
+        return this.cacher.close().catch((error) => {
+          this.logger?.error('Error closing cacher:', error);
+        });
+      });
+    }
+
+    // 停止指标收集
+    if (this.metrics) {
+      shutdownTasks.push(() => {
+        this.logger?.debug('Stopping metrics...');
+        return this.metrics?.stop()?.then(() => undefined).catch((error) => {
+           this.logger?.error('Error stopping metrics:', error);
+           return undefined;
+         }) || Promise.resolve();
+      });
+    }
+
+    // 停止追踪
+    if (this.tracer) {
+      shutdownTasks.push(() => {
+        this.logger?.debug('Stopping tracer...');
+        return this.tracer!.stop().then(() => undefined).catch((error) => {
+          this.logger?.error('Error stopping tracer:', error);
+          return undefined;
+        });
+      });
+    }
+
+
+
+    // 停止注册表
+    if (this.registry) {
+      shutdownTasks.push(() => {
+        this.logger?.debug('Stopping registry...');
+        return this.registry!.stop().catch((error) => {
+          this.logger?.error('Error stopping registry:', error);
+        });
+      });
+    }
+
+    // 顺序执行关闭任务
+    return shutdownTasks.reduce((promise, task) => {
+      return promise.then(task);
+    }, Promise.resolve());
+  }
+
+  /**
+   * 执行停止后的中间件钩子
+   * @private
+   */
+  private _executeStoppedHooks(): Promise<void> {
+    return Promise.resolve()
+      .then(() => {
+        try {
+           this.logger?.debug('Executing stopped hooks...');
+           const result = this.callMiddlewareHook('stopped', [this], { reverse: true });
+           if (result && typeof result.then === 'function') {
+             return result.then(() => undefined);
+           }
+           return Promise.resolve();
+         } catch (error) {
+           this.logger?.error('Error in stopped middleware hook:', error);
+           return Promise.resolve();
+         }
+      })
+      .then(() => {
+        if (this.options.stopped && isFunction(this.options.stopped)) {
+          try {
+            return (this.options.stopped as Function)(this);
+          } catch (error) {
+            this.logger?.error('Error in user stopped callback:', error);
+            return Promise.resolve();
+          }
+        }
+      });
+  }
+
+  /**
+   * 完成关闭过程
+   * @private
+   */
+  private _finalizeShutdown(): Promise<void> {
+    this.logger?.info('Star is stopped. Good bye.');
+    
+    // 重置指标
+    this.metrics?.set(METRIC.UNIVERSE_STAR_STARTED, 0);
+    
+    // 广播停止事件
+    this.broadcastLocal('$star.stopped');
+    
+    // 移除进程事件监听器
+    if (this.options.skipProcessEventRegistration === false) {
+      this.logger?.debug('Removing process event listeners...');
+      process.removeListener('beforeExit', this._closeFn);
+      process.removeListener('exit', this._closeFn);
+      process.removeListener('SIGINT', this._closeFn);
+      process.removeListener('SIGTERM', this._closeFn);
+    }
+    
+    // 停止日志工厂
+    if (this.loggerFactory) {
+      return (this.loggerFactory as LoggerFactory).stop().catch((error) => {
+        console.error('Error stopping logger factory:', error);
+      });
+    }
+    
+    return Promise.resolve();
+  }
+
+  /**
+   * 处理关闭错误
+   * @private
+   */
+  private _handleShutdownError(error: any): Promise<void> {
+    this.logger?.error('Error during Star shutdown:', error);
+    console.error('Star shutdown failed:', error);
+    
+    // 即使出错也要尝试完成基本的清理
+    try {
+      this.metrics?.set(METRIC.UNIVERSE_STAR_STARTED, 0);
+      this.broadcastLocal('$star.error', {
+        error: error,
+        module: 'star',
+        type: 'SHUTDOWN_ERROR'
+      });
+    } catch (cleanupError) {
+      console.error('Error during error cleanup:', cleanupError);
+    }
+    
+    return Promise.resolve();
   }
 
   /**
@@ -602,15 +1043,75 @@ export default class Star {
    * 动作通信
    */
   public call(actionName: string, params?: GenericObject, options?: GenericObject): Promise<any> {
+    // 验证输入参数
+    const validationError = this._validateCallParameters(actionName);
+    if (validationError) {
+      return Promise.reject(validationError);
+    }
+
     if (params == undefined) params = {};
 
-    // 创建上下文
+    try {
+      // 创建或复用上下文
+      const ctx = this._createOrReuseContext(actionName, params, options);
+      if (ctx instanceof Error) {
+        return Promise.reject(ctx).catch((error) => this.errorHandler(error, { actionName, params, options }));
+      }
+
+      // 记录调用日志
+      this._logCallAction(ctx);
+
+      // 验证端点处理器
+      if (!ctx.endpoint?.action?.handler) {
+        return Promise.reject(new UniverseError('star call action is error, ctx endpoint action handle is undefined.'));
+      }
+
+      // 执行端点处理器
+      const promise = ctx.endpoint.action.handler(ctx);
+      promise.ctx = ctx;
+
+      return promise;
+    } catch (error) {
+      return Promise.reject(error).catch((err) => this.errorHandler(err, { actionName, params, options }));
+    }
+  }
+
+  /**
+   * 验证call方法的参数
+   * @private
+   */
+  private _validateCallParameters(actionName: string): Error | null {
+    if (!actionName) {
+      return new StarServerError(
+        'Action name is required!',
+        UniverseErrorCode.SERVICE_ERROR,
+        UniverseErrorOptionsType.INVALID_PARAMETERS
+      );
+    }
+
+    if (!this.started) {
+       return new StarServerError(
+         'Star is not started!',
+         UniverseErrorCode.SERVICE_ERROR,
+         UniverseErrorOptionsType.SERVICE_NOT_AVAILABLE
+       );
+     }
+
+    return null;
+  }
+
+  /**
+   * 创建或复用上下文
+   * @private
+   */
+  private _createOrReuseContext(actionName: string, params: GenericObject, options?: GenericObject): Context | Error {
     let ctx: Context;
+    
     if (options && options.ctx != null) {
-      // 找到动作的下一个端点
+      // 复用现有上下文
       const endpoint = this.findNextActionEndpoint(actionName, options, options.ctx);
       if (endpoint instanceof Error) {
-        return Promise.reject(endpoint).catch((error) => this.errorHandler(error, { actionName, params, options }));
+        return endpoint;
       }
 
       ctx = options.ctx;
@@ -619,17 +1120,23 @@ export default class Star {
       ctx.action = endpoint.action;
       ctx.service = endpoint.action?.service || null;
     } else {
-      // 创建新根上下文
+      // 创建新的根上下文
       ctx = this.ContextFactory?.create(this, null, params, options) as Context;
-      // 找到下一个端点
       const endpoint = this.findNextActionEndpoint(actionName, options || {}, ctx);
       if (endpoint instanceof Error) {
-        return Promise.reject(endpoint).catch((error) => this.errorHandler(error, { actionName, params, options }));
+        return endpoint;
       }
-      // 设置上下文的端口
       ctx.setEndpoint(endpoint);
     }
-    // 上下文的端口是否为本地
+
+    return ctx;
+  }
+
+  /**
+   * 记录调用动作的日志
+   * @private
+   */
+  private _logCallAction(ctx: Context): void {
     if (ctx.endpoint?.local) {
       this.logger?.debug('Call action locally.', {
         action: ctx.action?.name,
@@ -642,15 +1149,6 @@ export default class Star {
         requestID: ctx.requestID
       });
     }
-
-    if (!ctx.endpoint?.action?.handler)
-      return Promise.reject(new UniverseError('star call action is error, ctx endpoint action handle is undefined.'));
-
-    // 端口处理的结果
-    let p = ctx.endpoint.action.handler(ctx);
-    p.ctx = ctx;
-
-    return p;
   }
 
   /**
@@ -783,25 +1281,23 @@ export default class Star {
     def: Array<StarMCallActionParams> | Record<string, StarMCallActionParams>,
     opts: MCallCallingOptions = {}
   ): Promise<any[] | GenericObject> {
-    const { settled, ...options } = opts;
+    // 验证输入参数
+    if (!def || (typeof def !== 'object')) {
+      return Promise.reject(
+        new StarServerError(
+          'Invalid calling definition.',
+          UniverseErrorCode.SERVICE_ERROR,
+          UniverseErrorOptionsType.INVALID_PARAMETERS
+        )
+      );
+    }
+
+    const { settled = true, ...options } = opts;
 
     if (Array.isArray(def)) {
-      return promiseAllControl(
-        def.map((item) => this.call(item.action, item.params, item.options || options)),
-        settled || true
-      );
+      return this._handleArrayMCall(def, options, settled);
     } else if (isObject(def)) {
-      let results = {};
-      let promises = Object.keys(def).map((name) => {
-        const item = def[name];
-        const callOptions = item.options || options;
-
-        return this.call(item.action, item.params, callOptions).then((res) => (results[name] = res));
-      });
-      let p = promiseAllControl(promises, settled || true);
-      (p as any).ctx = promises.map((promise) => (promise as any).ctx);
-
-      return p.then(() => results);
+      return this._handleObjectMCall(def, options, settled);
     } else {
       return Promise.reject(
         new StarServerError(
@@ -811,6 +1307,50 @@ export default class Star {
         )
       );
     }
+  }
+
+  /**
+   * 处理数组形式的多重调用
+   * @private
+   */
+  private _handleArrayMCall(
+    def: Array<StarMCallActionParams>,
+    options: GenericObject,
+    settled: boolean
+  ): Promise<any[]> {
+    const promises = def.map((item) => {
+      const callOptions = item.options || options;
+      return this.call(item.action, item.params, callOptions);
+    });
+
+    return promiseAllControl(promises, settled);
+  }
+
+  /**
+   * 处理对象形式的多重调用
+   * @private
+   */
+  private _handleObjectMCall(
+    def: Record<string, StarMCallActionParams>,
+    options: GenericObject,
+    settled: boolean
+  ): Promise<GenericObject> {
+    const results: GenericObject = {};
+    const promises = Object.keys(def).map((name) => {
+      const item = def[name];
+      const callOptions = item.options || options;
+
+      return this.call(item.action, item.params, callOptions)
+        .then((res) => {
+          results[name] = res;
+          return res;
+        });
+    });
+
+    const promise = promiseAllControl(promises, settled);
+    (promise as any).ctx = promises.map((p) => (p as any).ctx);
+
+    return promise.then(() => results);
   }
 
   /**
@@ -830,7 +1370,11 @@ export default class Star {
   }
 
   /**
-   * 本地节点广播通知
+   * 在本地节点广播事件通知
+   * @param eventName - 事件名称
+   * @param payload - 事件载荷数据
+   * @param options - 广播选项，可包含groups等配置
+   * @returns Promise<void>
    */
   public broadcastLocal(eventName: string, payload?: any, options?: GenericObject): Promise<void> {
     if (Array.isArray(options) || isString(options)) options = { groups: options };
@@ -854,7 +1398,11 @@ export default class Star {
   }
 
   /**
-   * 广播至所有的节点
+   * 向所有节点（本地和远程）广播事件
+   * @param eventName - 事件名称
+   * @param payload - 事件载荷数据
+   * @param options - 广播选项，可包含groups等配置
+   * @returns Promise<any[]>
    */
   public broadcast(eventName: string, payload?: any, options?: GenericObject) {
     if (Array.isArray(options) || isString(options)) options = { groups: options };
@@ -914,7 +1462,11 @@ export default class Star {
   }
 
   /**
-   * emit动作
+   * 发射事件到指定的服务节点（支持负载均衡）
+   * @param eventName - 事件名称
+   * @param payload - 事件载荷数据
+   * @param options - 发射选项，可包含groups等配置
+   * @returns Promise<any[]>
    */
   public emit(eventName: string, payload?: any, options?: GenericObject) {
     if (Array.isArray(options) || isString(options)) options = { groups: options };
@@ -1252,7 +1804,7 @@ export default class Star {
   /**
    * 销毁一个本地服务
    */
-  public destroyService(service: string | Service | GenericObject) {
+  public async destroyService(service: string | Service | GenericObject): Promise<void> {
     let serviceName: string = '';
     let serviceVersion: string = '';
 
@@ -1267,32 +1819,33 @@ export default class Star {
     }
 
     if (!service) {
-      return Promise.reject(new ServiceNotFoundError({ name: serviceName, version: serviceVersion }));
+      throw new ServiceNotFoundError({ name: serviceName, version: serviceVersion });
     }
 
-    return Promise.resolve()
-      .then(() => (service as Service)._stop())
-      .catch((err) => {
-        this.logger?.error(`Unable to stop '${(service as Service).fullName}' service.`, err);
+    try {
+      await (service as Service)._stop();
+    } catch (err) {
+      this.logger?.error(`Unable to stop '${(service as Service).fullName}' service.`, err);
 
-        // 广播事件
-        this.broadcastLocal('$star.error', {
-          error: err,
-          module: 'star',
-          type: C.FAILED_DESTRUCTION_SERVICE
-        });
-      })
-      .then(() => {
-        removeFromArray(this.services, service);
-        // 取消订阅的服务
-        this.registry?.unregisterService((service as Service).fullName, `${this.nodeID}`);
-
-        this.logger?.info(`Service '${(service as Service).fullName}' is stopped.`);
-        // 更新本地服务数据
-        this.servicesChanged(true);
-        // 指标数据
-        this.metrics?.set(METRIC.UNIVERSE_STAR_LOCAL_SERVICES_TOTAL, this.services.length);
+      // 广播事件
+      this.broadcastLocal('$star.error', {
+        error: err,
+        module: 'star',
+        type: C.FAILED_DESTRUCTION_SERVICE
       });
+    }
+
+    // 使用Map结构删除服务
+    this._removeServiceFromMap(service as Service);
+    // 取消订阅的服务
+    this.registry?.unregisterService((service as Service).fullName, `${this.nodeID}`);
+
+    this.logger?.info(`Service '${(service as Service).fullName}' is stopped.`);
+    // 更新本地服务数据
+    this.servicesChanged(true);
+    // 指标数据
+    this.metrics?.set(METRIC.UNIVERSE_STAR_LOCAL_SERVICES_TOTAL, this.services.length);
+    // 动态调整事件监听器限制
   }
 
   /**
@@ -1305,9 +1858,13 @@ export default class Star {
   public getLocalService(name: string | ServiceSearchObj, version?: string | number) {
     if (arguments.length === 1) {
       if (isString(name)) {
+        // 优先使用Map查找fullName
+        const service = this._getServiceFromMap(name as string);
+        if (service) return service;
+        // 回退到数组查找
         return this.services.find((service) => service.fullName === name);
       } else if (isPlainObject(name)) {
-        // 对象参数
+        // 对象参数 - 使用数组查找复杂条件
         return this.services.find(
           (service) =>
             service.name === (name as ServiceSearchObj).name && service.version === (name as ServiceSearchObj).version
@@ -1315,7 +1872,8 @@ export default class Star {
       }
     }
 
-    return this.services.find((service) => service.name === name && service.version === version);
+    // 使用Map查找优化
+    return this._findServiceInMap((service) => service.name === name && service.version === version);
   }
 
   /**
@@ -1373,9 +1931,10 @@ export default class Star {
    * 添加本地服务
    */
   public addLocalService(service: Service<ServiceSettingSchema>) {
-    this.services.push(service);
+    this._addServiceToMap(service);
     // 注册性能指标
     this.metrics?.set(METRIC.UNIVERSE_STAR_LOCAL_SERVICES_TOTAL, this.services.length);
+
   }
 
   /**
@@ -1427,12 +1986,12 @@ export default class Star {
   /**
    * 等待其他的服务
    */
-  public waitForServices(
+  public async waitForServices(
     serviceNames: any | any[],
     timeout: number | undefined = this.options.dependencyTimeout,
     interval: number | undefined = this.options.dependencyInterval,
     logger: LoggerInstance | null = this.logger
-  ) {
+  ): Promise<{ services: string[]; statuses: any[] }> {
     if (!Array.isArray(serviceNames)) serviceNames = [serviceNames];
 
     serviceNames = _.uniq(
@@ -1451,7 +2010,7 @@ export default class Star {
       )
     );
 
-    if (serviceNames?.length === 0) return Promise.resolve({ services: [], statuses: [] });
+    if (serviceNames?.length === 0) return { services: [], statuses: [] };
 
     logger?.info(
       `Waiting for service(s) ${serviceNames.map((n) => (Array.isArray(n) ? n.join(' OR ') : n)).join(', ')}'...`
@@ -1459,61 +2018,54 @@ export default class Star {
 
     const startTime = Date.now();
 
-    return new Promise((resolve, reject) => {
-      const check = () => {
-        // 获得服务状态
-        const serviceStatuses = serviceNames.map((name: string | string[]) => {
-          if (Array.isArray(name)) {
-            return name.map((n) => ({ name: n, available: this.registry?.hasService(n) }));
-          } else {
-            return { name, available: this.registry?.hasService(name) };
-          }
-        });
-
-        // 扁平化
-        const flattenedStatuses = _.flatMap(serviceStatuses, (s) => s);
-        const names = flattenedStatuses.map((s) => s.name);
-        // 过滤状态不对的服务
-        const availableServices = flattenedStatuses.filter((s) => s.available);
-        const isReady = serviceStatuses.every((status) =>
-          Array.isArray(status) ? status.some((n) => n.available) : status.available
-        );
-
-        if (isReady) {
-          logger?.info(`Service(s) '${availableServices.map((s) => s.name).join(', ')}' are available.`);
-
-          return resolve({ services: names, statuses: flattenedStatuses });
+    while (true) {
+      // 获得服务状态
+      const serviceStatuses = serviceNames.map((name: string | string[]) => {
+        if (Array.isArray(name)) {
+          return name.map((n) => ({ name: n, available: this.registry?.hasService(n) }));
+        } else {
+          return { name, available: this.registry?.hasService(name) };
         }
+      });
 
-        const unavailableServices = flattenedStatuses.filter((s) => !s.available);
-        logger?.debug(
-          format(
-            '%d (%s) %d services are available. %d (%s) are still unavailable. Waiting further...',
-            availableServices.length,
-            availableServices.map((s) => s.name).join(', '),
-            serviceStatuses.length,
-            unavailableServices.length,
-            unavailableServices.map((s) => s.name).join(', ')
-          )
+      // 扁平化
+      const flattenedStatuses = _.flatMap(serviceStatuses, (s) => s);
+      const names = flattenedStatuses.map((s) => s.name);
+      // 过滤状态不对的服务
+      const availableServices = flattenedStatuses.filter((s) => s.available);
+      const isReady = serviceStatuses.every((status) =>
+        Array.isArray(status) ? status.some((n) => n.available) : status.available
+      );
+
+      if (isReady) {
+        logger?.info(`Service(s) '${availableServices.map((s) => s.name).join(', ')}' are available.`);
+        return { services: names, statuses: flattenedStatuses };
+      }
+
+      const unavailableServices = flattenedStatuses.filter((s) => !s.available);
+      logger?.debug(
+        format(
+          '%d (%s) %d services are available. %d (%s) are still unavailable. Waiting further...',
+          availableServices.length,
+          availableServices.map((s) => s.name).join(', '),
+          serviceStatuses.length,
+          unavailableServices.length,
+          unavailableServices.map((s) => s.name).join(', ')
+        )
+      );
+
+      if (timeout && Date.now() - startTime > timeout) {
+        // 超时
+        throw new StarServerError(
+          'Services waiting is timed out.',
+          UniverseErrorCode.SERVICE_ERROR,
+          UniverseErrorOptionsType.WAITFOR_SERVICES,
+          { services: names, statuses: flattenedStatuses }
         );
+      }
 
-        if (timeout && Date.now() - startTime > timeout) {
-          // 超时
-          return reject(
-            new StarServerError(
-              'Services waiting is timed out.',
-              UniverseErrorCode.SERVICE_ERROR,
-              UniverseErrorOptionsType.WAITFOR_SERVICES,
-              { services: names, statuses: flattenedStatuses }
-            )
-          );
-        }
-
-        setTimeout(check, interval);
-      };
-
-      check();
-    });
+      await new Promise(resolve => setTimeout(resolve, interval));
+    }
   }
 
   /**

@@ -216,7 +216,7 @@ export default class Transit {
   /**
    * 连接到tansporter模块，如果失败，每次间隔5s后会重试
    */
-  public connect() {
+  public connect(): Promise<void> {
     this.logger.info('Connecting to the transporter...');
 
     return new Promise((resolve) => {
@@ -1009,7 +1009,7 @@ export default class Transit {
    * 发送节点信息
    * @param nodeID 发送的目标节点
    */
-  public sendNodeInfo(info: any, nodeID: string) {
+  public sendNodeInfo(info: any, nodeID: string): Promise<void> {
     if (!this.connected || !this.isReady) return Promise.resolve();
 
     return this.publish(

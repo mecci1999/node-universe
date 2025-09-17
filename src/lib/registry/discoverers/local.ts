@@ -35,7 +35,7 @@ export default class LocalDiscoverer extends BaseDiscoverer {
   /**
    * 发送本地节点信息
    */
-  public sendLocalNodeInfo(nodeID?: string) {
+  public sendLocalNodeInfo(nodeID?: string): Promise<void> {
     if (!this.transit) return Promise.resolve();
 
     // 获取自身节点的数据

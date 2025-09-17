@@ -38,7 +38,7 @@
     "cbor-x": "^1.5.3",
     "crypto": "^1.0.1",
     "etcd3": "^1.1.2",
-    "eventemitter2": "^6.4.9",
+    "eventemitter3": "^5.0.1",
     "fastest-validator": "^1.17.0",
     "glob": "^10.3.10",
     "ioredis": "^5.3.2",

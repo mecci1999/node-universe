@@ -30,7 +30,11 @@ export default class ShardStrategy extends BaseStrategy {
     this.cache = new LRUCache({ max: this.options.cacheSize, maxSize: this.options.cacheSize });
     this.needRebuild = true;
     this.ring = [];
-    this.star.localBus?.on('$node.**', () => (this.needRebuild = true));
+    // 监听所有以 '$node.' 开头的事件
+    this.star.localBus?.on('$node.connected', () => (this.needRebuild = true));
+    this.star.localBus?.on('$node.disconnected', () => (this.needRebuild = true));
+    this.star.localBus?.on('$node.updated', () => (this.needRebuild = true));
+    this.star.localBus?.on('$node.removed', () => (this.needRebuild = true));
   }
 
   /**

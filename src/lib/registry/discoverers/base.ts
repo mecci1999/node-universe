@@ -265,7 +265,7 @@ export default class BaseDiscoverer {
   /**
    * 本地服务注册发生改变，需要通知远程节点
    */
-  public sendLocalNodeInfo(nodeID?: string): Promise<any> {
+  public sendLocalNodeInfo(nodeID?: string): Promise<void> {
     throw new Error('Not implemented');
   }
 
