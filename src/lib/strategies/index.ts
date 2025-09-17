@@ -1,22 +1,33 @@
 import BaseStrategy from './base';
+import RoundRobinStrategy from './round-robin';
+import RandomStrategy from './random';
 import CpuUsageStrategy from './cpu-usage';
 import LatencyStrategy from './latency';
-import RandomStrategy from './random';
-import RoundRobinStrategy from './round-robin';
 import ShardStrategy from './shard';
+import WeightedRoundRobinStrategy from './weighted-round-robin';
+import LeastConnectionsStrategy from './least-connections';
+import ConsistentHashingStrategy from './consistent-hashing';
+import HealthCheckStrategy from './health-check';
+import IPHashStrategy from './ip-hash';
+import LeastResponseTimeStrategy from './least-response-time';
 import { isObject, isString } from '@/utils';
 import { StarOptionsError } from '../error';
 
 /**
  * 通信策略模块
  */
-const Strategies = {
-  Base: BaseStrategy,
+const strategies = {
   RoundRobin: RoundRobinStrategy,
   Random: RandomStrategy,
   CpuUsage: CpuUsageStrategy,
   Latency: LatencyStrategy,
-  Shard: ShardStrategy
+  Shard: ShardStrategy,
+  WeightedRoundRobin: WeightedRoundRobinStrategy,
+  LeastConnections: LeastConnectionsStrategy,
+  ConsistentHashing: ConsistentHashingStrategy,
+  HealthCheck: HealthCheckStrategy,
+  IPHash: IPHashStrategy,
+  LeastResponseTime: LeastResponseTimeStrategy
 };
 
 /**
@@ -26,12 +37,12 @@ const Strategies = {
 function getByName(name: string) {
   if (!name) return null;
 
-  let instanceName = Object.keys(Strategies).find((item) => item.toLocaleLowerCase() === name.toLocaleLowerCase());
-  if (instanceName) return Strategies[instanceName];
+  let instanceName = Object.keys(strategies).find((item) => item.toLocaleLowerCase() === name.toLocaleLowerCase());
+  if (instanceName) return strategies[instanceName];
 }
 
 function resolve(options: object | string) {
-  if (Object.prototype.isPrototypeOf.call(Strategies.Base, options)) {
+  if (Object.prototype.isPrototypeOf.call(BaseStrategy, options)) {
     return options;
   } else if (isString(options)) {
     let StrategyClass = getByName(options as string);
@@ -46,11 +57,11 @@ function resolve(options: object | string) {
       });
   }
 
-  return Strategies.RoundRobin;
+  return strategies.RoundRobin;
 }
 
 function register(name: string, value: any) {
-  Strategies[name] = value;
+  strategies[name] = value;
 }
 
-export default Object.assign(Strategies, { resolve, register });
+export default Object.assign(strategies, { resolve, register });

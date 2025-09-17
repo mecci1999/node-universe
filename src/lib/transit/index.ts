@@ -31,6 +31,9 @@ export default class Transit {
   public pendingRequests: Map<any, TransitRequest>;
   public pendingReqStreams: Map<any, any>;
   public pendingResStreams: Map<any, any>;
+  private maxPendingRequests: number;
+  private maxStreamPoolSize: number;
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   public connected: boolean;
   public disconnecting: boolean;
@@ -55,9 +58,14 @@ export default class Transit {
     this.discoverer = (star.registry as Registry).discoverer;
     this.errorRegenerator = star.errorRegenerator;
 
-    this.pendingReqStreams = new Map();
     this.pendingRequests = new Map();
+    this.pendingReqStreams = new Map();
     this.pendingResStreams = new Map();
+    this.maxPendingRequests = options?.maxQueueSize || 10000;
+    this.maxStreamPoolSize = 1000;
+    
+    // 启动定期清理机制
+    this.startCleanupTimer();
 
     /* deprecated */
     this.stat = {
@@ -267,6 +275,7 @@ export default class Transit {
         }
       })
       .then(() => {
+        this.stopCleanupTimer();
         this.disconnecting = false;
       });
   }
@@ -762,14 +771,11 @@ export default class Transit {
     if (!packet) return Promise.reject();
 
     return this.publish(packet).catch((error) => {
-      // 日志
-      this.logger.error('Unable to send HEARTBEAT packet.', error);
-      // 广播
-      this.star.broadcastLocal('$transit.error', {
-        error,
-        module: 'transit',
-        type: C.FAILED_SEND_HEARTBEAT_PACKET
-      });
+      this.handleTransitError(error, {
+         operation: 'send',
+         target: localNode.id,
+         errorType: C.FAILED_SEND_HEARTBEAT_PACKET
+       });
     });
   }
 
@@ -805,12 +811,13 @@ export default class Transit {
     });
 
     return this.publish(packet).catch((error) => {
-      this.logger.error(`Unable to send '${ctx.eventName}' event ${requestID}to groups.`, error);
-      this.star.broadcastLocal('$transit.error', {
-        error,
-        module: 'transit',
-        type: C.FAILED_SEND_EVENT_PACKET
-      });
+      this.handleTransitError(error, {
+         operation: 'send',
+         target: ctx.nodeID || 'groups',
+         requestID: ctx.requestID ? ctx.requestID : undefined,
+         eventName: ctx.eventName || 'unknowEvent',
+         errorType: C.FAILED_SEND_EVENT_PACKET
+       });
     });
   }
 
@@ -860,13 +867,14 @@ export default class Transit {
       typeof ctx.params.on === 'function' &&
       typeof ctx.params.pipe === 'function';
 
-    const request: TransitRequest = {
+    const request: TransitRequest & { timestamp: number } = {
       action: ctx.action,
       nodeID: ctx.nodeID || '',
       ctx,
       resolve,
       reject,
-      stream: isStream
+      stream: isStream,
+      timestamp: Date.now()
     };
 
     const payload: any = {
@@ -901,13 +909,13 @@ export default class Transit {
     this.logger.debug(`=> Send '${ctx.action?.name}' request ${requestID} to ${nodeName} node.`);
 
     const publishCatch = (error) => {
-      this.logger.error(`Unable to send '${ctx.action?.name}' request ${requestID} to ${nodeName} node.`);
-      // 广播
-      this.star.broadcastLocal('$transit.error', {
-        error,
-        module: 'transit',
-        type: C.FAILED_SEND_REQUEST_PACKET
-      });
+      this.handleTransitError(error, {
+         operation: 'send',
+         target: ctx.nodeID || undefined,
+         requestID: ctx.requestID || undefined,
+         action: ctx.action?.name,
+         errorType: C.FAILED_SEND_REQUEST_PACKET
+       });
     };
 
     // 添加到审核队列中
@@ -1055,15 +1063,34 @@ export default class Transit {
 
       pass.$prevSeq = -1;
       pass.$pool = new Map();
+      pass.$poolTimeout = new Map();
+      pass.$createdAt = Date.now();
 
       this.pendingReqStreams.set(payload.id, pass);
     }
 
     if (payload.seq > pass.$prevSeq + 1) {
+      // 检查池大小限制
+      if (pass.$pool.size >= this.maxStreamPoolSize) {
+        this.logger.warn(`Stream pool size limit reached (${this.maxStreamPoolSize}), dropping packet. Seq: ${payload.seq}`);
+        return null;
+      }
+      
       this.logger.debug(`Put the chunk into pool (size: ${pass.$pool.size}). Seq: ${payload.seq}`);
-
+      
       pass.$pool.set(payload.seq, payload);
-
+      
+      // 设置超时清理
+      const timeoutId = setTimeout(() => {
+        if (pass.$pool.has(payload.seq)) {
+          this.logger.warn(`Removing expired packet from pool. Seq: ${payload.seq}`);
+          pass.$pool.delete(payload.seq);
+          pass.$poolTimeout.delete(payload.seq);
+        }
+      }, 30000); // 30秒超时
+      
+      pass.$poolTimeout.set(payload.seq, timeoutId);
+      
       return null;
     }
 
@@ -1099,6 +1126,12 @@ export default class Transit {
       const nextPacket = pass.$pool.get(nextSeq);
       if (nextPacket) {
         pass.$pool.delete(nextSeq);
+        // 清理对应的超时定时器
+        const timeoutId = pass.$poolTimeout.get(nextSeq);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          pass.$poolTimeout.delete(nextSeq);
+        }
         setImmediate(() => this.requestHandler(nextPacket));
       }
     }
@@ -1126,21 +1159,34 @@ export default class Transit {
 
       pass.$prevSeq = -1;
       pass.$pool = new Map();
+      pass.$poolTimeout = new Map();
+      pass.$createdAt = Date.now();
 
       this.pendingResStreams.set(packet.id, pass);
     }
 
     if (packet.seq > pass.$prevSeq + 1) {
+      // 检查池大小限制
+      if (pass.$pool.size >= this.maxStreamPoolSize) {
+        this.logger.warn(`Response stream pool size limit reached (${this.maxStreamPoolSize}), dropping packet. Seq: ${packet.seq}`);
+        return true;
+      }
+      
       // 有一些数据块没有发出去，需要存储这些没有数据块
       this.logger.debug(`Put the chunk into pool (size: ${pass.$pool.size}). Seq: ${packet.seq}`);
 
       pass.$pool.set(packet.seq, packet);
-
-      // 开始计时器
-
-      // 检查池子大小
-
-      // 重置seq
+      
+      // 设置超时清理
+      const timeoutId = setTimeout(() => {
+        if (pass.$pool.has(packet.seq)) {
+          this.logger.warn(`Removing expired response packet from pool. Seq: ${packet.seq}`);
+          pass.$pool.delete(packet.seq);
+          pass.$poolTimeout.delete(packet.seq);
+        }
+      }, 30000); // 30秒超时
+      
+      pass.$poolTimeout.set(packet.seq, timeoutId);
 
       return true;
     }
@@ -1182,6 +1228,12 @@ export default class Transit {
       const nextPacket = pass.$pool.get(nextSeq);
       if (nextPacket) {
         pass.$pool.delete(nextSeq);
+        // 清理对应的超时定时器
+        const timeoutId = pass.$poolTimeout.get(nextSeq);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          pass.$poolTimeout.delete(nextSeq);
+        }
         setImmediate(() => this.responseHandler(nextPacket));
       }
     }
@@ -1205,43 +1257,89 @@ export default class Transit {
     this.pendingResStreams.delete(id);
   }
 
+
+
   /**
-   * 发送一个事件给远程节点
+   * 统一错误处理方法
    */
-  public sendeEvent(ctx: Context) {
-    const groups = ctx.eventGroups;
-    const requestID = ctx.requestID ? `with requestID '${ctx.requestID}' ` : '';
-
-    if (ctx.endpoint) {
-      this.logger.debug(
-        `=> Send '${ctx.eventName}' event ${requestID}to '${ctx.nodeID}' node` +
-        (groups ? ` in '${groups.join(', ')}' group(s)` : '') +
-        '.'
-      );
-    } else {
-      this.logger.debug(`=> Send '${ctx.eventName}' event ${requestID}to '${groups?.join(', ')}' group(s).`);
-    }
-
-    return this.publish(
-      new Packet(PacketTypes.PACKET_EVENT, ctx.endpoint ? ctx.nodeID : null, {
-        id: ctx.id,
-        event: ctx.eventName,
-        data: ctx.params,
-        groups,
-        broadcast: ctx.eventType == 'broadcast',
-        meta: ctx.meta,
-        level: ctx.level,
-        tracing: ctx.tracing,
-        parentID: ctx.parentID,
-        requestID: ctx.requestID,
-        caller: ctx.caller,
-        needAck: ctx.needAck
-      })
-    ).catch((error) => {
-      this.logger.error(`Unable to send '${ctx.eventName}' event ${requestID}to groups.`, error);
-
-      this.star.broadcastLocal('$transit.error', { error: error, module: 'transit', type: C.FAILED_SEND_EVENT_PACKET });
+  private handleTransitError(error: Error, context: {
+    operation: string;
+    target?: string;
+    requestID?: string;
+    eventName?: string;
+    action?: string;
+    errorType: string;
+  }) {
+    const { operation, target, requestID, eventName, action, errorType } = context;
+    const targetInfo = target ? ` to '${target}'` : '';
+    const requestInfo = requestID ? ` with requestID '${requestID}'` : '';
+    const operationInfo = eventName ? `'${eventName}' event` : action ? `'${action}' request` : operation;
+    
+    this.logger.error(`Unable to ${operation} ${operationInfo}${requestInfo}${targetInfo}.`, error);
+    
+    this.star.broadcastLocal('$transit.error', {
+      error,
+      module: 'transit',
+      type: errorType,
+      context: {
+        operation,
+        target,
+        requestID,
+        eventName,
+        action
+      }
     });
+  }
+
+  /**
+   * 启动内存清理定时器
+   */
+  private startCleanupTimer() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredRequests();
+    }, 60000); // 每分钟清理一次
+  }
+
+  /**
+   * 停止内存清理定时器
+   */
+  private stopCleanupTimer() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+  }
+
+  /**
+   * 清理过期的请求和流
+   */
+  private cleanupExpiredRequests() {
+    const now = Date.now();
+    const timeout = 300000; // 5分钟超时
+    
+    // 清理过期的pending requests
+    for (const [id, req] of this.pendingRequests.entries()) {
+      if ((req as any).timestamp && now - (req as any).timestamp > timeout) {
+        this.logger.warn(`Cleaning up expired request: ${id}`);
+        this.removePendingRequest(id);
+        req.reject(new Error('Request timeout during cleanup'));
+      }
+    }
+    
+    // 限制Map大小
+    if (this.pendingRequests.size > this.maxPendingRequests) {
+      const excess = this.pendingRequests.size - this.maxPendingRequests;
+      const oldestEntries = Array.from(this.pendingRequests.entries()).slice(0, excess);
+      for (const [id, req] of oldestEntries) {
+        this.logger.warn(`Cleaning up excess request: ${id}`);
+        this.removePendingRequest(id);
+        req.reject(new Error('Request removed due to memory limit'));
+      }
+    }
   }
 
   /**

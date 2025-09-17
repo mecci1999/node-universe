@@ -15,7 +15,7 @@ export default class BaseStrategy {
     this.options = options || {};
   }
 
-  public select(list: Endpoint[], ctx?: Context) {
+  public select(list: Endpoint[], ctx?: Context): Endpoint {
     throw new Error('Not implemented method!');
   }
 }
