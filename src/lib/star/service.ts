@@ -61,12 +61,6 @@ export default class Service<S = ServiceSettingSchema> {
 
     // 日志记录：服务构造开始
     const tempLogger = star.getLogger('Service', {});
-    tempLogger?.debug('开始构造服务', {
-      serviceName: schema?.name || 'unknown',
-      version: schema?.version || 'unknown',
-      hasSchema: !!schema,
-      hasSchemaMods: !!schemaMods
-    });
 
     if (schemaMods) {
       deprecate(
@@ -79,11 +73,6 @@ export default class Service<S = ServiceSettingSchema> {
 
     if (schema) {
       // 日志记录：开始验证服务模式
-      tempLogger?.debug('开始验证服务模式', {
-        serviceName: schema.name || 'unknown',
-        schemaType: typeof schema,
-        schemaKeys: Object.keys(schema || {})
-      });
 
       // 增强错误处理：验证服务模式
       if (!isObject(schema)) {
@@ -108,13 +97,6 @@ export default class Service<S = ServiceSettingSchema> {
       }
       
       // 运行时类型验证
-      tempLogger?.debug('开始运行时类型验证', {
-        serviceName: schema.name || 'unknown',
-        hasName: !!schema.name,
-        hasActions: !!schema.actions,
-        hasMethods: !!schema.methods,
-        hasEvents: !!schema.events
-      });
 
       if (!TypeValidator.validateServiceSchema(schema)) {
         tempLogger?.error('服务模式结构验证失败', {
@@ -142,9 +124,7 @@ export default class Service<S = ServiceSettingSchema> {
         );
       }
 
-      tempLogger?.debug('服务模式结构验证通过', {
-        serviceName: schema.name
-      });
+      // 服务模式结构验证通过
       
       // 输入验证
       const nameValidation = InputValidator.validateServiceName(schema.name);
@@ -232,19 +212,7 @@ export default class Service<S = ServiceSettingSchema> {
         }
       }
       
-      tempLogger?.debug('开始解析服务模式', {
-        serviceName: schema.name,
-        version: schema.version
-      });
-
       this.parseServiceSchema(schema);
-
-      tempLogger?.info('服务构造完成', {
-        serviceName: this.fullName,
-        methodCount: Object.keys(this.schema?.methods || {}).length,
-        actionCount: Object.keys(this.schema?.actions || {}).length,
-        eventCount: Object.keys(this.schema?.events || {}).length
-      });
     }
   }
 
@@ -267,10 +235,7 @@ export default class Service<S = ServiceSettingSchema> {
    * @param schema
    */
   private parseServiceSchema(schema: any) {
-    this.logger?.debug('开始解析服务协议', {
-      serviceName: schema?.name || 'unknown',
-      schemaKeys: Object.keys(schema || {})
-    });
+    // 开始解析服务协议
 
     // 验证和预处理模式
     schema = this._validateAndPreprocessSchema(schema);
@@ -288,10 +253,7 @@ export default class Service<S = ServiceSettingSchema> {
     
     this._serviceSpecification = serviceSpecification;
     
-    this.logger?.debug('服务协议解析完成，开始初始化', {
-      serviceName: this.fullName,
-      specificationKeys: Object.keys(serviceSpecification)
-    });
+    // 服务协议解析完成，开始初始化
     
     this._init();
   }
@@ -564,44 +526,22 @@ export default class Service<S = ServiceSettingSchema> {
 
     if (isFunction(this.schema?.created)) {
       // 存在初始化钩子
-      this.logger?.debug('执行created钩子函数', {
-        serviceName: this.fullName,
-        hookType: 'function'
-      });
       this.schema?.created && (this.schema?.created as any).call(this);
     } else if (Array.isArray(this.schema?.created)) {
-      this.logger?.debug('执行created钩子函数数组', {
-        serviceName: this.fullName,
-        hookType: 'array',
-        hookCount: this.schema.created.length
-      });
+      // 执行created钩子函数数组
       this.schema?.created.forEach((fn, index) => {
-        this.logger?.debug(`执行第${index + 1}个created钩子`, {
-          serviceName: this.fullName,
-          hookIndex: index
-        });
+        // 执行created钩子
         fn.call(this);
       });
     }
 
     // 加载本地服务
-    this.logger?.debug('添加到本地服务注册表', {
-      serviceName: this.fullName
-    });
     this.star.addLocalService(this as any);
 
     // 调用中间件
-    this.logger?.debug('调用serviceCreated中间件', {
-      serviceName: this.fullName
-    });
     this.star.callMiddlewareHookSync('serviceCreated', [this]);
 
-    // 日志
-    this.logger?.debug(`Service '${this.fullName}' created.`, {
-      serviceName: this.name,
-      version: this.version,
-      fullName: this.fullName
-    });
+    // Service created
   }
 
   /**
@@ -621,9 +561,6 @@ export default class Service<S = ServiceSettingSchema> {
     return Promise.resolve()
       .then(() => {
         // 调用中间件
-        this.logger?.debug('调用serviceStarting中间件', {
-          serviceName: this.fullName
-        });
         return this.star.callMiddlewareHook('serviceStarting', [this]);
       })
       .then(() => {
@@ -644,10 +581,7 @@ export default class Service<S = ServiceSettingSchema> {
       .then(() => {
         // 执行服务中的start异步方法
         if (isFunction(this.schema?.started)) {
-          this.logger?.debug('执行started钩子函数', {
-            serviceName: this.fullName,
-            hookType: 'function'
-          });
+          // 执行started钩子函数
           return promiseMethod(this.schema?.started as any).call(this);
         }
 
@@ -660,10 +594,6 @@ export default class Service<S = ServiceSettingSchema> {
           return this.schema?.started
             .map((fn, index) => {
               if (isFunction(fn)) {
-                this.logger?.debug(`准备执行第${index + 1}个started钩子`, {
-                  serviceName: this.fullName,
-                  hookIndex: index
-                });
                 return promiseMethod(fn.bind(this));
               }
             })
@@ -684,9 +614,7 @@ export default class Service<S = ServiceSettingSchema> {
         return this.star.registerLocalService(this._serviceSpecification as ServiceItem);
       })
       .then(() => {
-        this.logger?.debug('调用serviceStarted中间件', {
-          serviceName: this.fullName
-        });
+        // 调用中间件
         return this.star.callMiddlewareHook('serviceStarted', [this]);
       })
       .then(() => {
@@ -707,49 +635,27 @@ export default class Service<S = ServiceSettingSchema> {
    * @public
    */
   public async _stop(): Promise<void> {
-    this.logger?.debug(`Service '${this.fullName}' is stopping...`, {
-      serviceName: this.name,
-      version: this.version,
-      hasStoppedHook: !!(this.schema?.stopped)
-    });
+    this.logger?.info(`Service '${this.fullName}' is stopping...`);
 
     try {
-      this.logger?.debug('调用serviceStopping中间件', {
-        serviceName: this.fullName,
-        reverse: true
-      });
+      // 调用中间件
       await this.star.callMiddlewareHook('serviceStopping', [this], { reverse: true });
 
       if (isFunction(this.schema?.stopped)) {
-        this.logger?.debug('执行stopped钩子函数', {
-          serviceName: this.fullName,
-          hookType: 'function'
-        });
+        // 执行stopped钩子函数
         await promiseMethod(this.schema?.stopped as any).call(this);
       } else if (this.schema?.stopped && Array.isArray(this.schema?.stopped)) {
-        this.logger?.debug('执行stopped钩子函数数组', {
-          serviceName: this.fullName,
-          hookType: 'array',
-          hookCount: this.schema.stopped.length,
-          reversed: true
-        });
+        // 执行stopped钩子函数数组
         const arr = Array.from(this.schema.stopped).reverse();
 
         for (const [index, fn] of arr.entries()) {
           if (fn && isFunction(fn)) {
-            this.logger?.debug(`准备执行第${index + 1}个stopped钩子（倒序）`, {
-              serviceName: this.fullName,
-              hookIndex: index
-            });
             await promiseMethod(fn.bind(this))();
           }
         }
       }
 
-      this.logger?.debug('调用serviceStopped中间件', {
-        serviceName: this.fullName,
-        reverse: true
-      });
+      // 调用中间件
       await this.star.callMiddlewareHook('serviceStopped', [this], { reverse: true });
 
       // 内存管理：清理服务资源
@@ -791,12 +697,6 @@ export default class Service<S = ServiceSettingSchema> {
     try {
       // 清理动作引用
       if (this.actions) {
-        this.logger?.debug('清理动作引用', {
-          serviceName: this.fullName,
-          actionCount: Object.keys(this.actions).length
-        });
-        
-        // 清理动作处理器的引用
         Object.keys(this.actions).forEach(actionName => {
           if (this.actions && this.actions[actionName]) {
             delete this.actions[actionName];
@@ -808,12 +708,6 @@ export default class Service<S = ServiceSettingSchema> {
 
       // 清理事件引用
       if (this.events) {
-        this.logger?.debug('清理事件引用', {
-          serviceName: this.fullName,
-          eventCount: Object.keys(this.events).length
-        });
-        
-        // 清理事件处理器的引用
         Object.keys(this.events).forEach(eventName => {
           if (this.events && this.events[eventName]) {
             delete this.events[eventName];
@@ -825,11 +719,6 @@ export default class Service<S = ServiceSettingSchema> {
 
       // 清理服务规范
       if (this._serviceSpecification) {
-        this.logger?.debug('清理服务规范', {
-          serviceName: this.fullName,
-          specKeys: Object.keys(this._serviceSpecification)
-        });
-        
         // 深度清理服务规范中的引用
         if (this._serviceSpecification.actions) {
           Object.keys(this._serviceSpecification.actions).forEach(key => {
@@ -854,11 +743,6 @@ export default class Service<S = ServiceSettingSchema> {
 
       // 清理元数据
       if (this.metadata && Object.keys(this.metadata).length > 0) {
-        this.logger?.debug('清理元数据', {
-          serviceName: this.fullName,
-          metadataKeys: Object.keys(this.metadata)
-        });
-        
         Object.keys(this.metadata).forEach(key => {
           delete this.metadata[key];
         });
@@ -866,11 +750,6 @@ export default class Service<S = ServiceSettingSchema> {
 
       // 清理设置引用（保留基本信息）
       if (this.settings && typeof this.settings === 'object') {
-        this.logger?.debug('清理设置引用', {
-          serviceName: this.fullName,
-          settingsKeys: Object.keys(this.settings)
-        });
-        
         // 只清理非基本配置的引用
         Object.keys(this.settings).forEach(key => {
           if (key !== 'name' && key !== 'version') {
@@ -882,12 +761,6 @@ export default class Service<S = ServiceSettingSchema> {
       // 清理依赖引用
       this.dependencies = null;
       this.originalSchema = null;
-
-      this.logger?.debug('服务资源清理完成', {
-        serviceName: this.fullName,
-        memoryOptimized: true
-      });
-      
     } catch (error) {
       this.logger?.error('清理服务资源时发生错误', {
          serviceName: this.fullName,
@@ -937,18 +810,9 @@ export default class Service<S = ServiceSettingSchema> {
     let method: any;
 
     if (isFunction(methodDef)) {
-      this.logger?.debug('方法定义为函数类型', {
-        serviceName: this.fullName,
-        methodName: name
-      });
       // 如果方法存在
       method = { handler: methodDef };
     } else if (isObject(methodDef)) {
-      this.logger?.debug('方法定义为对象类型', {
-        serviceName: this.fullName,
-        methodName: name,
-        objectKeys: Object.keys(methodDef)
-      });
       method = methodDef;
     } else {
       this.logger?.error('方法定义格式无效', {
