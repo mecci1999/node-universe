@@ -799,14 +799,6 @@ export default class Service<S = ServiceSettingSchema> {
    * @returns 解析后的方法对象
    */
   private _parseMethodDefinition(methodDef: any, name: string): any {
-    this.logger?.debug('开始解析方法定义', {
-      serviceName: this.fullName,
-      methodName: name,
-      methodType: typeof methodDef,
-      isFunction: isFunction(methodDef),
-      isObject: isObject(methodDef)
-    });
-
     let method: any;
 
     if (isFunction(methodDef)) {
@@ -838,12 +830,6 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-
-    this.logger?.debug('方法定义解析完成', {
-      serviceName: this.fullName,
-      methodName: name,
-      hasHandler: !!method.handler
-    });
 
     return method;
   }
