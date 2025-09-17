@@ -37,6 +37,7 @@ export default class KafkaTransporter extends BaseTransporter {
       sasl: null,
       connectionTimeout: 3000,
       requestTimeout: 30000,
+      logLevel: 'NOTHING', // 默认禁用kafkajs内部日志
       producer: {
         maxInFlightRequests: 1,
         idempotent: false,
@@ -83,6 +84,17 @@ export default class KafkaTransporter extends BaseTransporter {
         kafkaConfig.sasl = this.options.sasl;
       }
 
+      // 添加日志级别配置，禁用kafkajs内部日志
+      const { logLevel } = require('kafkajs');
+      const logLevelMap = {
+        'NOTHING': logLevel.NOTHING,
+        'ERROR': logLevel.ERROR,
+        'WARN': logLevel.WARN,
+        'INFO': logLevel.INFO,
+        'DEBUG': logLevel.DEBUG
+      };
+      kafkaConfig.logLevel = logLevelMap[this.options.logLevel] || logLevel.NOTHING;
+      
       this.client = new Kafka(kafkaConfig);
 
       // 创建生产者

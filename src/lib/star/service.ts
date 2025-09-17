@@ -1131,34 +1131,13 @@ export default class Service<S = ServiceSettingSchema> {
    * @returns 解析后的事件对象
    */
   private _parseEventDefinition(eventDef: any, name: string): GenericObject {
-    this.logger?.debug('开始解析事件定义', {
-      serviceName: this.fullName,
-      eventName: name,
-      eventType: typeof eventDef,
-      isFunction: isFunction(eventDef),
-      isArray: Array.isArray(eventDef),
-      isObject: isObject(eventDef)
-    });
-
     let event: GenericObject;
 
     if (isFunction(eventDef) || Array.isArray(eventDef)) {
-      this.logger?.debug('事件定义为函数或数组类型', {
-        serviceName: this.fullName,
-        eventName: name,
-        isFunction: isFunction(eventDef),
-        isArray: Array.isArray(eventDef),
-        arrayLength: Array.isArray(eventDef) ? eventDef.length : undefined
-      });
       event = {
         handler: eventDef
       };
     } else if (isObject(eventDef)) {
-      this.logger?.debug('事件定义为对象类型，进行结构化拷贝', {
-        serviceName: this.fullName,
-        eventName: name,
-        objectKeys: Object.keys(eventDef)
-      });
       // 优化：使用结构化拷贝，保留 handler 函数引用
       event = CloneOptimizer.structuredClone(eventDef, true);
     } else {
@@ -1185,12 +1164,6 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-
-    this.logger?.debug('事件定义解析完成', {
-      serviceName: this.fullName,
-      eventName: name,
-      hasHandler: !!event.handler
-    });
 
     return event;
   }
@@ -1277,14 +1250,6 @@ export default class Service<S = ServiceSettingSchema> {
    * @returns 处理后的处理器
    */
   private _processEventHandler(event: GenericObject): any {
-    this.logger?.debug('开始处理事件处理器', {
-      serviceName: this.fullName,
-      eventName: event.name,
-      handlerType: typeof event.handler,
-      isFunction: isFunction(event.handler),
-      isArray: Array.isArray(event.handler)
-    });
-
     let handler: any;
 
     if (isFunction(event.handler)) {
@@ -1294,31 +1259,12 @@ export default class Service<S = ServiceSettingSchema> {
       handler.__newSignature = event.context === true || isNewSignature(args);
     } else if (Array.isArray(event.handler)) {
       handler = event.handler.map((h, index) => {
-        this.logger?.debug(`处理第${index + 1}个处理器`, {
-          serviceName: this.fullName,
-          eventName: event.name,
-          handlerIndex: index,
-          handlerType: typeof h
-        });
-        
         const args = functionArguments(h);
         h = promiseMethod(h);
         h.__newSignature = event.context === true || isNewSignature(args);
         return h;
       });
-      
-      this.logger?.debug('数组处理器处理完成', {
-        serviceName: this.fullName,
-        eventName: event.name,
-        processedCount: handler.length
-      });
     }
-
-    this.logger?.debug('事件处理器处理完成', {
-      serviceName: this.fullName,
-      eventName: event.name,
-      handlerProcessed: !!handler
-    });
 
     return handler;
   }
