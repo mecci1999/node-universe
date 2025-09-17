@@ -147,8 +147,8 @@ export class TypeValidator {
       return false;
     }
 
-    // 服务名称应该只包含字母、数字、点号和连字符
-    const namePattern = /^[a-zA-Z0-9.-]+$/;
+    // 服务名称应该只包含字母、数字、点号、下划线、美元符号和连字符
+    const namePattern = /^[a-zA-Z0-9._$-]+$/;
     return namePattern.test(name);
   }
 

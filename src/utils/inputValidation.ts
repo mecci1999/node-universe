@@ -45,10 +45,10 @@ export class InputValidator {
     }
 
     // 检查格式
-    const namePattern = /^[a-zA-Z0-9._-]+$/;
+    const namePattern = /^[a-zA-Z0-9._$-]+$/;
     if (!namePattern.test(name)) {
       result.isValid = false;
-      result.errors.push('服务名称只能包含字母、数字、点号、下划线和连字符');
+      result.errors.push('服务名称只能包含字母、数字、点号、下划线、美元符号和连字符');
     }
 
     // 检查是否以字母开头
