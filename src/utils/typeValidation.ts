@@ -8,7 +8,7 @@ export interface ServiceSchema {
   version?: string;
   settings?: Record<string, any>;
   metadata?: Record<string, any>;
-  mixins?: any[];
+  mixins?: any[] | any;
   dependencies?: string[];
   methods?: Record<string, MethodDefinition>;
   actions?: Record<string, ActionDefinition>;
@@ -69,7 +69,7 @@ export class TypeValidator {
       return false;
     }
 
-    if (schema.mixins !== undefined && !Array.isArray(schema.mixins)) {
+    if (schema.mixins !== undefined && !Array.isArray(schema.mixins) && (typeof schema.mixins !== 'object' || schema.mixins === null)) {
       return false;
     }
 
