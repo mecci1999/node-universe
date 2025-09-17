@@ -464,3 +464,32 @@ export {
   isNewSignature,
   clearRequireCache
 };
+
+export { CloneOptimizer, performanceMonitor } from './cloneOptimizer';
+export { EnhancedErrorHandler, ErrorRecoveryStrategy } from './errorHandler';
+export { 
+  TypeValidator, 
+  isServiceSchema, 
+  isMethodDefinition, 
+  isActionDefinition, 
+  isEventDefinition,
+  assertServiceSchema,
+  assertMethodDefinition,
+  assertActionDefinition,
+  assertEventDefinition
+} from './typeValidation';
+export type { 
+  ServiceSchema, 
+  MethodDefinition, 
+  ActionDefinition, 
+  EventDefinition 
+} from './typeValidation';
+export { 
+  InputValidator, 
+  BoundaryChecker, 
+  SecurityChecker 
+} from './inputValidation';
+export type { 
+  ValidationResult, 
+  ValidationRule 
+} from './inputValidation';
