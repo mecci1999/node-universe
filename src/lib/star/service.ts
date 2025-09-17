@@ -586,11 +586,6 @@ export default class Service<S = ServiceSettingSchema> {
         }
 
         if (Array.isArray(this.schema?.started)) {
-          this.logger?.debug('执行started钩子函数数组', {
-            serviceName: this.fullName,
-            hookType: 'array',
-            hookCount: this.schema.started.length
-          });
           return this.schema?.started
             .map((fn, index) => {
               if (isFunction(fn)) {
@@ -960,28 +955,11 @@ export default class Service<S = ServiceSettingSchema> {
    * @returns 解析后的动作对象
    */
   private _parseActionDefinition(actionDef: any, name: string): GenericObject {
-    this.logger?.debug('开始解析动作定义', {
-      serviceName: this.fullName,
-      actionName: name,
-      actionType: typeof actionDef,
-      isFunction: isFunction(actionDef),
-      isObject: isObject(actionDef)
-    });
-
     let action: GenericObject;
 
     if (isFunction(actionDef)) {
-      this.logger?.debug('动作定义为函数类型', {
-        serviceName: this.fullName,
-        actionName: name
-      });
       action = { handler: actionDef };
     } else if (isObject(actionDef)) {
-      this.logger?.debug('动作定义为对象类型，进行结构化拷贝', {
-        serviceName: this.fullName,
-        actionName: name,
-        objectKeys: Object.keys(actionDef)
-      });
       // 优化：使用结构化拷贝，保留 handler 函数引用，提升性能
       action = CloneOptimizer.structuredClone(actionDef, true);
     } else {
@@ -1008,12 +986,6 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-
-    this.logger?.debug('动作定义解析完成', {
-      serviceName: this.fullName,
-      actionName: name,
-      hasHandler: !!action.handler
-    });
 
     return action;
   }
@@ -1316,28 +1288,11 @@ export default class Service<S = ServiceSettingSchema> {
     let handler: any;
 
     if (isFunction(event.handler)) {
-      this.logger?.debug('处理函数类型的事件处理器', {
-        serviceName: this.fullName,
-        eventName: event.name
-      });
       // 获得参数
       const args = functionArguments(event.handler);
       handler = promiseMethod(event.handler);
       handler.__newSignature = event.context === true || isNewSignature(args);
-      
-      this.logger?.debug('函数处理器处理完成', {
-        serviceName: this.fullName,
-        eventName: event.name,
-        argumentCount: args.length,
-        newSignature: handler.__newSignature
-      });
     } else if (Array.isArray(event.handler)) {
-      this.logger?.debug('处理数组类型的事件处理器', {
-        serviceName: this.fullName,
-        eventName: event.name,
-        handlerCount: event.handler.length
-      });
-      
       handler = event.handler.map((h, index) => {
         this.logger?.debug(`处理第${index + 1}个处理器`, {
           serviceName: this.fullName,
