@@ -1,8 +1,8 @@
 import { isInheritedClass, isObject, isString } from '@/utils';
 import { StarOptionsError } from '../error';
 import BaseTransporter from './base';
-// import NatsTransporter from './nats';
-// import MqttTransporter from './mqtt';
+import NatsTransporter from './nats';
+import MqttTransporter from './mqtt';
 // import RedisTransporter from './redis';
 import KafkaTransporter from './kafka';
 import TcpTransporter from './tcp';
@@ -11,9 +11,9 @@ import { UniverseErrorOptionsType } from '@/typings/error';
 const Transporters = {
   Base: BaseTransporter,
   Tcp: TcpTransporter,
-  Kafka: KafkaTransporter
-  // Nats: NatsTransporter,
-  // MQTT: MqttTransporter,
+  Kafka: KafkaTransporter,
+  Nats: NatsTransporter,
+  MQTT: MqttTransporter,
   // Redis: RedisTransporter,
 };
 
