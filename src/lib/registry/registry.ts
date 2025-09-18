@@ -448,6 +448,15 @@ export default class Registry {
    */
   public createPrivateActionEndpoint(action: any) {
     if (!this.nodes.localNode) return;
+    
+    // 修复：添加action有效性检查
+    if (!action) {
+      throw new Error('Action cannot be null when creating private action endpoint');
+    }
+    
+    if (!action.service) {
+      throw new Error('Action must have a service property when creating private action endpoint');
+    }
 
     return new ActionEndpoint(this, this.star, this.nodes.localNode, action.service, action);
   }

@@ -960,8 +960,8 @@ export default class Service<S = ServiceSettingSchema> {
     if (isFunction(actionDef)) {
       action = { handler: actionDef };
     } else if (isObject(actionDef)) {
-      // 优化：使用结构化拷贝，保留 handler 函数引用，提升性能
-      action = CloneOptimizer.structuredClone(actionDef, true);
+      // 修复：使用浅拷贝替代结构化拷贝，避免属性丢失
+      action = { ...actionDef };
     } else {
       this.logger?.error('动作定义格式无效', {
         serviceName: this.fullName,
@@ -1138,8 +1138,8 @@ export default class Service<S = ServiceSettingSchema> {
         handler: eventDef
       };
     } else if (isObject(eventDef)) {
-      // 优化：使用结构化拷贝，保留 handler 函数引用
-      event = CloneOptimizer.structuredClone(eventDef, true);
+      // 修复：使用浅拷贝替代结构化拷贝，避免属性丢失
+      event = { ...eventDef };
     } else {
       this.logger?.error('事件定义格式无效', {
         serviceName: this.fullName,
@@ -1312,12 +1312,12 @@ export default class Service<S = ServiceSettingSchema> {
   public mergeSchemas(mixinSchema: any, serviceSchema: any) {
     // 优化：提前返回，避免不必要的拷贝操作
     if (!mixinSchema && !serviceSchema) return {};
-    if (!serviceSchema) return CloneOptimizer.smartClone(mixinSchema);
-    if (!mixinSchema) return CloneOptimizer.smartClone(serviceSchema);
+    if (!serviceSchema) return { ...mixinSchema };
+    if (!mixinSchema) return { ...serviceSchema };
     
-    // 优化：使用智能拷贝，根据对象复杂度选择拷贝策略
-    const res = CloneOptimizer.smartClone(mixinSchema);
-    const mods = CloneOptimizer.smartClone(serviceSchema);
+    // 修复：使用浅拷贝替代智能拷贝，避免action/event/method属性丢失
+    const res = { ...mixinSchema };
+    const mods = { ...serviceSchema };
 
     Object.keys(mods).forEach((key) => {
       if ((key === 'name' || key === 'version') && mods[key] !== undefined) {
