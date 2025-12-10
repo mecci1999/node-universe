@@ -1312,12 +1312,12 @@ export default class Service<S = ServiceSettingSchema> {
   public mergeSchemas(mixinSchema: any, serviceSchema: any) {
     // 优化：提前返回，避免不必要的拷贝操作
     if (!mixinSchema && !serviceSchema) return {};
-    if (!serviceSchema) return { ...mixinSchema };
-    if (!mixinSchema) return { ...serviceSchema };
+    if (!serviceSchema) return _.cloneDeep(mixinSchema);
+    if (!mixinSchema) return _.cloneDeep(serviceSchema);
     
-    // 修复：使用浅拷贝替代智能拷贝，避免action/event/method属性丢失
-    const res = { ...mixinSchema };
-    const mods = { ...serviceSchema };
+    // 修复：必须使用深拷贝，否则会污染原始mixin定义
+    const res = _.cloneDeep(mixinSchema);
+    const mods = _.cloneDeep(serviceSchema);
 
     Object.keys(mods).forEach((key) => {
       if ((key === 'name' || key === 'version') && mods[key] !== undefined) {
