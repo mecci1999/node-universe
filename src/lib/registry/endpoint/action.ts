@@ -14,7 +14,16 @@ export default class ActionEndpoint extends Endpoint {
       throw new Error(`Action cannot be null when creating ActionEndpoint for service ${service?.name}`);
     }
     this.action = action;
+    // DEBUG: 打印 ActionEndpoint 创建时的 action 信息
+    if (service.name === 'gateway' && action.name === 'gateway.dispatch') {
+      console.log(
+        `[DEBUG-ENDPOINT-CREATE] Created ActionEndpoint for 'gateway.dispatch'. Action is object? ${typeof action === 'object'}. Action keys: ${Object.keys(action).join(',')}`
+      );
+    }
+
     this.name = `${this.id}:${this.action?.name}`;
+    this.local = node.id === star.nodeID;
+    this.state = true;
   }
 
   public update(action: any): void {

@@ -8,6 +8,7 @@ import ServiceItem from '../service-item';
 import strategies from '@/lib/strategies';
 import EndpointList from '../endpoint/list';
 import _ from 'lodash';
+import { getConstructorName } from '@/utils';
 
 export default class ActionCatalog {
   public registry: Registry;
@@ -52,7 +53,21 @@ export default class ActionCatalog {
       this.actions.set(action.name, list);
     }
 
-    list.add(node, service, action);
+    // DEBUG: 检查 EndpointFactory 是否正确
+    if (action.name === 'gateway.dispatch') {
+      console.log(
+        `[DEBUG-ACTION-CATALOG] Adding action 'gateway.dispatch'. EndpointFactory name: ${getConstructorName(this.EndpointFactory)}`
+      );
+    }
+
+    const endpoint = list.add(node, service, action);
+
+    // DEBUG: 检查添加后的 endpoint 状态
+    if (action.name === 'gateway.dispatch') {
+      console.log(
+        `[DEBUG-ACTION-CATALOG] Added endpoint for 'gateway.dispatch'. Endpoint Action is null? ${endpoint.action === null}`
+      );
+    }
 
     return list;
   }

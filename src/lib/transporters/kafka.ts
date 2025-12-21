@@ -20,12 +20,12 @@ export default class KafkaTransporter extends BaseTransporter {
 
     // 处理嵌套的options结构
     let kafkaOptions = options.options || {};
-    
+
     // 合并外层和内层配置
     const mergedOptions = {
       ...options,
       ...kafkaOptions,
-      brokers: options.host ? [options.host] : (kafkaOptions.brokers || ['localhost:9092']),
+      brokers: options.host ? [options.host] : kafkaOptions.brokers || ['localhost:9092'],
       ssl: kafkaOptions.ssl !== undefined ? kafkaOptions.ssl : false,
       sasl: kafkaOptions.sasl || null
     };
@@ -87,41 +87,41 @@ export default class KafkaTransporter extends BaseTransporter {
       // 添加日志级别配置，禁用kafkajs内部日志
       const { logLevel } = require('kafkajs');
       const logLevelMap = {
-        'NOTHING': logLevel.NOTHING,
-        'ERROR': logLevel.ERROR,
-        'WARN': logLevel.WARN,
-        'INFO': logLevel.INFO,
-        'DEBUG': logLevel.DEBUG
+        NOTHING: logLevel.NOTHING,
+        ERROR: logLevel.ERROR,
+        WARN: logLevel.WARN,
+        INFO: logLevel.INFO,
+        DEBUG: logLevel.DEBUG
       };
       kafkaConfig.logLevel = logLevelMap[this.options.logLevel] || logLevel.NOTHING;
-      
+
       this.client = new Kafka(kafkaConfig);
 
       // 创建生产者
       this.producer = this.client.producer(this.options.producer);
-      
+
       // 创建管理员客户端
       this.admin = this.client.admin();
 
       // 连接生产者
       await this.producer.connect();
-      
+
       // 连接管理员客户端
       await this.admin.connect();
 
       this.logger?.info('Kafka client is connected.');
       await this.onConnected();
     } catch (error: any) {
-       this.logger?.error('Kafka Producer error', error.message);
-       this.logger?.debug('Kafka Producer error', error);
-       // 广播错误
-       this.star?.broadcastLocal('$transporter.error', {
-         error,
-         module: 'transporter',
-         type: C.FAILED_PUBLISHER_ERROR
-       });
-       throw error;
-     }
+      this.logger?.error('Kafka Producer error', error.message);
+      this.logger?.debug('Kafka Producer error', error);
+      // 广播错误
+      this.star?.broadcastLocal('$transporter.error', {
+        error,
+        module: 'transporter',
+        type: C.FAILED_PUBLISHER_ERROR
+      });
+      throw error;
+    }
   }
 
   /**
@@ -156,15 +156,17 @@ export default class KafkaTransporter extends BaseTransporter {
   public async makeSubscriptions(topics: GenericObject[]): Promise<void> {
     // 生成当前实例的topics
     const currentTopicsMap = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
-    
+
     // 生成需要监听的cmd模式
     const cmdPatterns = topics.map(({ cmd }) => cmd);
+    // 去重
+    const uniqueCmds = [...new Set(cmdPatterns)];
 
     try {
       // 使用管理员客户端创建当前实例的topics
       if (this.admin) {
         await this.admin.createTopics({
-          topics: currentTopicsMap.map(topic => ({
+          topics: currentTopicsMap.map((topic) => ({
             topic,
             numPartitions: 1,
             replicationFactor: 1
@@ -173,37 +175,47 @@ export default class KafkaTransporter extends BaseTransporter {
       }
 
       // 创建消费者实例
-      if (this.client && this.admin) {
-        const consumerOptions = Object.assign(
-          {
-            groupId: this.star?.instanceID || 'node-universe-group'
-          },
-          this.options.consumer
-        );
+      if (this.client) {
+        // 关键修复：确保groupId唯一。
+        // 原始代码中 Object.assign 的顺序导致 this.options.consumer 中的默认 groupId ('node-universe-group')
+        // 覆盖了 this.star.instanceID。这导致所有微服务节点加入同一个消费组。
+        // 由于 Kafka 的消费组负载均衡机制，如果有多个消费者但 Topic 只有一个分区，
+        // 只有其中一个消费者能收到消息（例如 INFO 广播包）。
+        // 这解释了为什么 gateway 经常收不到 auth 的注册信息。
+        const consumerOptions = Object.assign({}, this.options.consumer, {
+          groupId: this.star?.instanceID || this.options.consumer.groupId || 'node-universe-group'
+        });
+
+        this.logger?.info(`Kafka Consumer starting with Group ID: ${consumerOptions.groupId}`);
 
         this.consumer = this.client.consumer(consumerOptions);
 
         // 连接消费者
         await this.consumer.connect();
 
-        // 动态发现所有匹配的topics
-        const allTopicsToSubscribe = await this.discoverMatchingTopics(cmdPatterns);
-        
-        // 订阅所有发现的topics
-        for (const topic of allTopicsToSubscribe) {
-          await this.consumer.subscribe({ topic, fromBeginning: false });
-        }
+        // 构建正则表达式以匹配所有相关的topics
+        // 格式: ^prefix\.(cmd1|cmd2|...)(\..*)?$
+        const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const cmdsRegex = uniqueCmds.join('|');
+        const pattern = new RegExp(`^${escapedPrefix}\\.(${cmdsRegex})(\\..*)?$`);
+
+        // 使用正则订阅，kafkajs会自动处理新创建的匹配topic
+        await this.consumer.subscribe({ topic: pattern, fromBeginning: false });
 
         // 开始消费消息
         await this.consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
             try {
-              // 解析topic获取cmd，支持包含nodeID的格式
-              const topicParts = topic.split('.');
-              const cmd = topicParts[1] as PacketTypes;
-              
-              if (message.value && cmdPatterns.includes(cmd)) {
-                this.receive(cmd, message.value as Buffer);
+              // 解析topic获取cmd
+              // 更加健壮的解析方式：去除前缀后解析
+              if (topic.startsWith(this.prefix + '.')) {
+                const withoutPrefix = topic.slice(this.prefix.length + 1);
+                const parts = withoutPrefix.split('.');
+                const cmd = parts[0] as PacketTypes;
+
+                if (message.value && uniqueCmds.includes(cmd)) {
+                  this.receive(cmd, message.value as Buffer);
+                }
               }
             } catch (error: any) {
               this.logger?.error('Error processing message', error);
@@ -211,7 +223,7 @@ export default class KafkaTransporter extends BaseTransporter {
           }
         });
 
-        this.logger?.info(`KAFKA Consumer connected and subscribed to topics: ${allTopicsToSubscribe.join(', ')}`);
+        this.logger?.info(`KAFKA Consumer connected and subscribed to pattern: ${pattern}`);
       }
     } catch (error: any) {
       this.logger?.error('Unable to create topics or setup consumer!', topics, error);
@@ -222,36 +234,6 @@ export default class KafkaTransporter extends BaseTransporter {
         type: C.FAILED_TOPIC_CREATION
       });
       throw error;
-    }
-  }
-
-  /**
-   * 动态发现匹配的topics
-   */
-  private async discoverMatchingTopics(cmdPatterns: string[]): Promise<string[]> {
-    try {
-      if (!this.admin) return [];
-      
-      // 获取所有现有的topics
-      const metadata = await this.admin.fetchTopicMetadata();
-      const allTopics = metadata.topics.map(topic => topic.name);
-      
-      // 过滤出匹配的topics
-      const matchingTopics: string[] = [];
-      
-      for (const cmd of cmdPatterns) {
-        // 匹配格式: prefix.cmd 或 prefix.cmd.nodeID
-        const pattern = new RegExp(`^${this.prefix}\\.${cmd}(\\..*)?$`);
-        const cmdTopics = allTopics.filter(topic => pattern.test(topic));
-        matchingTopics.push(...cmdTopics);
-      }
-      
-      // 去重并返回
-      return [...new Set(matchingTopics)];
-    } catch (error: any) {
-      this.logger?.warn('Failed to discover topics, falling back to current instance topics', error);
-      // 如果发现失败，回退到只订阅当前实例的topics
-       return cmdPatterns.map(cmd => this.getTopicName(cmd, this.star?.nodeID || ''));
     }
   }
 

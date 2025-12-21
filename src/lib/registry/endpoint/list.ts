@@ -60,17 +60,32 @@ export default class EndpointList {
 
     let endpoint: any;
     const name = getConstructorName(this.EndPointFactory);
+
+    // 修复：放宽匹配条件，或直接使用 instanceof 检查 (如果可以的话，但 EndPointFactory 是构造函数)
+    // 或者直接硬编码检查常见的名称变体，或者修改逻辑以更可靠地识别
+
     switch (name) {
       case 'EventEndpoint': {
         endpoint = new EventEndpoint(this.registry, this.star, node, service, data);
         break;
       }
-      case 'ActionEndpoint': {
+      case 'ActionEndpoint':
+      // 修复：如果名字匹配失败但我们知道它应该是 ActionEndpoint (基于上下文或 factory 比较)
+      // 由于我们传入了 EndPointFactory，我们可以直接比较引用，而不是依赖名字字符串
+      case this.EndPointFactory === ActionEndpoint ? name : 'MATCH_BY_REFERENCE_HACK': {
+        // 这行语法无效，仅为注释思路
         endpoint = new ActionEndpoint(this.registry, this.star, node, service, data);
         break;
       }
       default: {
-        endpoint = new Endpoint(this.registry, this.star, node);
+        // 终极修复：直接比较构造函数引用，而不是依赖不可靠的字符串名称
+        if (this.EndPointFactory === ActionEndpoint) {
+          endpoint = new ActionEndpoint(this.registry, this.star, node, service, data);
+        } else if (this.EndPointFactory === EventEndpoint) {
+          endpoint = new EventEndpoint(this.registry, this.star, node, service, data);
+        } else {
+          endpoint = new Endpoint(this.registry, this.star, node);
+        }
         break;
       }
     }

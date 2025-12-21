@@ -13,10 +13,11 @@ export default class Endpoint {
   public node: Node;
   public local: boolean;
   public state: boolean;
-  public action: ActionSchema | null = null;
-  public event: EventSchema | null = null;
-  public service: ServiceItem | null = null;
-  public name: string = '';
+  // 移除默认初始化，改为在构造函数中初始化
+  public action: ActionSchema | null;
+  public event: EventSchema | null;
+  public service: ServiceItem | null;
+  public name: string;
 
   constructor(registry: Registry, star: Star, node: Node, service?: Service, event?: any) {
     this.registry = registry;
@@ -25,6 +26,14 @@ export default class Endpoint {
     this.node = node;
     this.local = node.id === star.nodeID;
     this.state = true;
+
+    // 初始化为 null，除非子类已经赋值（虽然子类还没运行，但为了保险起见）
+    // 注意：TypeScript 可能会生成在构造函数顶部的初始化代码，这可能会覆盖子类的赋值
+    // 最好的方式是移除字段声明处的初始化
+    this.action = null;
+    this.event = null;
+    this.service = null;
+    this.name = '';
   }
 
   /**

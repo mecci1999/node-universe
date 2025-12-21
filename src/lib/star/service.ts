@@ -43,18 +43,11 @@ export default class Service<S = ServiceSettingSchema> {
   constructor(star: Star, schema?: OriginalServiceSchema<S>, schemaMods?: any) {
     // 增强错误处理：验证Star实例
     if (!isObject(star)) {
-      throw EnhancedErrorHandler.createServiceSchemaError(
-        'Star实例创建失败',
-        {
-          expectedType: 'Star instance',
-          actualValue: star,
-          suggestions: [
-            '请确保传入有效的Star实例',
-            '检查Star类是否正确初始化',
-            '验证Star构造函数的参数'
-          ]
-        }
-      );
+      throw EnhancedErrorHandler.createServiceSchemaError('Star实例创建失败', {
+        expectedType: 'Star instance',
+        actualValue: star,
+        suggestions: ['请确保传入有效的Star实例', '检查Star类是否正确初始化', '验证Star构造函数的参数']
+      });
     }
 
     this.star = star;
@@ -86,16 +79,12 @@ export default class Service<S = ServiceSettingSchema> {
           {
             expectedType: 'object',
             actualValue: schema,
-            suggestions: [
-              '确保传入的schema是一个有效的对象',
-              '检查schema的定义和结构',
-              '参考服务模式的文档说明'
-            ]
+            suggestions: ['确保传入的schema是一个有效的对象', '检查schema的定义和结构', '参考服务模式的文档说明']
           },
           this.logger || undefined
         );
       }
-      
+
       // 运行时类型验证
 
       if (!TypeValidator.validateServiceSchema(schema)) {
@@ -125,7 +114,7 @@ export default class Service<S = ServiceSettingSchema> {
       }
 
       // 服务模式结构验证通过
-      
+
       // 输入验证
       const nameValidation = InputValidator.validateServiceName(schema.name);
       if (!nameValidation.isValid) {
@@ -141,7 +130,7 @@ export default class Service<S = ServiceSettingSchema> {
           this.logger || undefined
         );
       }
-      
+
       if (schema.version !== undefined) {
         const versionValidation = InputValidator.validateVersion(schema.version);
         if (!versionValidation.isValid) {
@@ -158,7 +147,7 @@ export default class Service<S = ServiceSettingSchema> {
           );
         }
       }
-      
+
       // 验证依赖项
       if (schema.dependencies !== undefined) {
         const depsValidation = InputValidator.validateDependencies(schema.dependencies);
@@ -176,7 +165,7 @@ export default class Service<S = ServiceSettingSchema> {
           );
         }
       }
-      
+
       // 验证设置和元数据
       if (schema.settings !== undefined) {
         const settingsValidation = InputValidator.validateSettings(schema.settings);
@@ -194,7 +183,7 @@ export default class Service<S = ServiceSettingSchema> {
           );
         }
       }
-      
+
       if (schema.metadata !== undefined) {
         const metadataValidation = InputValidator.validateMetadata(schema.metadata);
         if (!metadataValidation.isValid) {
@@ -211,7 +200,7 @@ export default class Service<S = ServiceSettingSchema> {
           );
         }
       }
-      
+
       this.parseServiceSchema(schema);
     }
   }
@@ -239,22 +228,22 @@ export default class Service<S = ServiceSettingSchema> {
 
     // 验证和预处理模式
     schema = this._validateAndPreprocessSchema(schema);
-    
+
     // 初始化服务基础属性
     this._initializeServiceProperties(schema);
-    
+
     // 创建服务规范
     const serviceSpecification = this._createServiceSpecification();
-    
+
     // 注册服务组件
     this._registerServiceMethods(schema);
     this._registerServiceActions(schema, serviceSpecification);
     this._registerServiceEvents(schema, serviceSpecification);
-    
+
     this._serviceSpecification = serviceSpecification;
-    
+
     // 服务协议解析完成，开始初始化
-    
+
     this._init();
   }
 
@@ -309,11 +298,7 @@ export default class Service<S = ServiceSettingSchema> {
           schemaProperty: 'name',
           expectedType: 'string',
           actualValue: schema.name,
-          suggestions: [
-            '在服务模式中添加name属性',
-            '确保name属性是非空字符串',
-            '检查服务模式的结构是否正确'
-          ]
+          suggestions: ['在服务模式中添加name属性', '确保name属性是非空字符串', '检查服务模式的结构是否正确']
         },
         this.logger || undefined
       );
@@ -387,9 +372,23 @@ export default class Service<S = ServiceSettingSchema> {
    */
   private _validateMethodName(name: string): void {
     const reservedNames = [
-      'name', 'version', 'settings', 'metadata', 'dependencies',
-      'schema', 'broker', 'star', 'actions', 'logger',
-      'created', 'started', 'stopped', '_start', '_stop', '_init', 'applyMixins'
+      'name',
+      'version',
+      'settings',
+      'metadata',
+      'dependencies',
+      'schema',
+      'broker',
+      'star',
+      'actions',
+      'logger',
+      'created',
+      'started',
+      'stopped',
+      '_start',
+      '_stop',
+      '_init',
+      'applyMixins'
     ];
 
     if (reservedNames.indexOf(name) !== -1 || name.startsWith('mergeSchema')) {
@@ -399,11 +398,7 @@ export default class Service<S = ServiceSettingSchema> {
           serviceName: this.name,
           schemaProperty: 'methods.' + name,
           actualValue: name,
-          suggestions: [
-            '使用不同的方法名称',
-            '避免使用系统保留的方法名',
-            '参考文档中的命名规范'
-          ]
+          suggestions: ['使用不同的方法名称', '避免使用系统保留的方法名', '参考文档中的命名规范']
         },
         this.logger || undefined
       );
@@ -426,6 +421,16 @@ export default class Service<S = ServiceSettingSchema> {
 
       // 创建动作模型
       let innerAction = this._createAction(action, name);
+      // DEBUG: 强制打印注册的动作名称
+      if (this.logger) {
+        this.logger.info(
+          `[DEBUG-ACTION-REG] Registering action: '${innerAction.name}' (raw: ${innerAction.rawName}) for service '${this.fullName}'`
+        );
+      } else {
+        console.log(
+          `[DEBUG-ACTION-REG] Registering action: '${innerAction.name}' (raw: ${innerAction.rawName}) for service '${this.fullName}'`
+        );
+      }
       serviceSpecification.actions[innerAction.name] = innerAction;
 
       const wrappedHandler = this.star.middlewares?.wrapHandler(
@@ -521,7 +526,7 @@ export default class Service<S = ServiceSettingSchema> {
     this.logger?.debug(`Service '${this.fullName}' is creating...`, {
       serviceName: this.name,
       version: this.version,
-      hasCreatedHook: !!(this.schema?.created)
+      hasCreatedHook: !!this.schema?.created
     });
 
     if (isFunction(this.schema?.created)) {
@@ -555,8 +560,8 @@ export default class Service<S = ServiceSettingSchema> {
     this.logger?.debug(`Service '${this.fullName}' is starting...`, {
       serviceName: this.name,
       version: this.version,
-      hasDependencies: !!(this.schema?.dependencies),
-      hasStartedHook: !!(this.schema?.started)
+      hasDependencies: !!this.schema?.dependencies,
+      hasStartedHook: !!this.schema?.started
     });
     return Promise.resolve()
       .then(() => {
@@ -579,6 +584,17 @@ export default class Service<S = ServiceSettingSchema> {
         }
       })
       .then(() => {
+        // 将服务注册到本地节点中注册表中
+        this.logger?.debug('注册服务到本地注册表', {
+          serviceName: this.fullName,
+          specification: {
+            actionsCount: Object.keys(this._serviceSpecification.actions || {}).length,
+            eventsCount: Object.keys(this._serviceSpecification.events || {}).length
+          }
+        });
+        return this.star.registerLocalService(this._serviceSpecification as ServiceItem);
+      })
+      .then(() => {
         // 执行服务中的start异步方法
         if (isFunction(this.schema?.started)) {
           // 执行started钩子函数
@@ -596,17 +612,6 @@ export default class Service<S = ServiceSettingSchema> {
               return p.then(() => fn());
             }, Promise.resolve());
         }
-      })
-      .then(() => {
-        // 将服务注册到本地节点中注册表中
-        this.logger?.debug('注册服务到本地注册表', {
-          serviceName: this.fullName,
-          specification: {
-            actionsCount: Object.keys(this._serviceSpecification.actions || {}).length,
-            eventsCount: Object.keys(this._serviceSpecification.events || {}).length
-          }
-        });
-        return this.star.registerLocalService(this._serviceSpecification as ServiceItem);
       })
       .then(() => {
         // 调用中间件
@@ -655,7 +660,7 @@ export default class Service<S = ServiceSettingSchema> {
 
       // 内存管理：清理服务资源
       this._cleanupServiceResources();
-      
+
       this.logger?.info(`Service '${this.fullName}' stopped.`, {
         serviceName: this.name,
         version: this.version,
@@ -663,15 +668,15 @@ export default class Service<S = ServiceSettingSchema> {
         shutdownComplete: true
       });
     } catch (error: any) {
-       this.logger?.error('服务停止过程中发生错误', {
-         serviceName: this.fullName,
-         error: error.message,
-         stack: error.stack
-       });
-      
+      this.logger?.error('服务停止过程中发生错误', {
+        serviceName: this.fullName,
+        error: error.message,
+        stack: error.stack
+      });
+
       // 即使出错也要清理资源
       this._cleanupServiceResources();
-      
+
       throw error;
     }
   }
@@ -692,23 +697,23 @@ export default class Service<S = ServiceSettingSchema> {
     try {
       // 清理动作引用
       if (this.actions) {
-        Object.keys(this.actions).forEach(actionName => {
+        Object.keys(this.actions).forEach((actionName) => {
           if (this.actions && this.actions[actionName]) {
             delete this.actions[actionName];
           }
         });
-        
+
         this.actions = null;
       }
 
       // 清理事件引用
       if (this.events) {
-        Object.keys(this.events).forEach(eventName => {
+        Object.keys(this.events).forEach((eventName) => {
           if (this.events && this.events[eventName]) {
             delete this.events[eventName];
           }
         });
-        
+
         this.events = null;
       }
 
@@ -716,29 +721,29 @@ export default class Service<S = ServiceSettingSchema> {
       if (this._serviceSpecification) {
         // 深度清理服务规范中的引用
         if (this._serviceSpecification.actions) {
-          Object.keys(this._serviceSpecification.actions).forEach(key => {
+          Object.keys(this._serviceSpecification.actions).forEach((key) => {
             delete this._serviceSpecification.actions[key];
           });
         }
-        
+
         if (this._serviceSpecification.events) {
-          Object.keys(this._serviceSpecification.events).forEach(key => {
+          Object.keys(this._serviceSpecification.events).forEach((key) => {
             delete this._serviceSpecification.events[key];
           });
         }
-        
+
         if (this._serviceSpecification.methods) {
-          Object.keys(this._serviceSpecification.methods).forEach(key => {
+          Object.keys(this._serviceSpecification.methods).forEach((key) => {
             delete this._serviceSpecification.methods[key];
           });
         }
-        
+
         this._serviceSpecification = {};
       }
 
       // 清理元数据
       if (this.metadata && Object.keys(this.metadata).length > 0) {
-        Object.keys(this.metadata).forEach(key => {
+        Object.keys(this.metadata).forEach((key) => {
           delete this.metadata[key];
         });
       }
@@ -746,7 +751,7 @@ export default class Service<S = ServiceSettingSchema> {
       // 清理设置引用（保留基本信息）
       if (this.settings && typeof this.settings === 'object') {
         // 只清理非基本配置的引用
-        Object.keys(this.settings).forEach(key => {
+        Object.keys(this.settings).forEach((key) => {
           if (key !== 'name' && key !== 'version') {
             delete (this.settings as any)[key];
           }
@@ -758,14 +763,14 @@ export default class Service<S = ServiceSettingSchema> {
       this.originalSchema = null;
     } catch (error) {
       this.logger?.error('清理服务资源时发生错误', {
-         serviceName: this.fullName,
-         error: (error as Error).message,
-         stack: (error as Error).stack
-       });
-     }
-   }
+        serviceName: this.fullName,
+        error: (error as Error).message,
+        stack: (error as Error).stack
+      });
+    }
+  }
 
-   /**
+  /**
    * 创建方法
    * 返回的结果:
    * {
@@ -777,13 +782,13 @@ export default class Service<S = ServiceSettingSchema> {
   public _createMethod(methodDef: any, name: string) {
     // 解析方法定义
     const method = this._parseMethodDefinition(methodDef, name);
-    
+
     // 验证方法定义
     this._validateMethodDefinition(method, name);
-    
+
     // 配置方法属性
     this._configureMethodProperties(method, name);
-    
+
     return method;
   }
 
@@ -853,7 +858,7 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-    
+
     // 边界检查
     if (!BoundaryChecker.checkMethodCount(Object.keys(this.schema?.methods || {}).length + 1)) {
       throw EnhancedErrorHandler.createServiceSchemaError(
@@ -868,7 +873,7 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-    
+
     // 安全检查
     const securityCheck = SecurityChecker.checkMethodSecurity(name, method);
     if (!securityCheck.isValid) {
@@ -894,11 +899,7 @@ export default class Service<S = ServiceSettingSchema> {
           schemaProperty: 'methods.' + name + '.handler',
           expectedType: 'function',
           actualValue: method.handler,
-          suggestions: [
-            '确保方法定义包含有效的handler函数',
-            '检查handler属性是否正确设置',
-            '验证函数定义的语法'
-          ]
+          suggestions: ['确保方法定义包含有效的handler函数', '检查handler属性是否正确设置', '验证函数定义的语法']
         },
         this.logger || undefined
       );
@@ -938,13 +939,13 @@ export default class Service<S = ServiceSettingSchema> {
   public _createAction(actionDef: any, name: string) {
     // 解析动作定义
     const action = this._parseActionDefinition(actionDef, name);
-    
+
     // 验证动作定义
     this._validateActionDefinition(action, name);
-    
+
     // 配置动作属性
     this._configureActionProperties(action, name);
-    
+
     return action;
   }
 
@@ -1014,7 +1015,7 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-    
+
     // 边界检查
     if (!BoundaryChecker.checkActionCount(Object.keys(this.schema?.actions || {}).length + 1)) {
       throw EnhancedErrorHandler.createServiceSchemaError(
@@ -1029,7 +1030,7 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-    
+
     // 安全检查
     const securityCheck = SecurityChecker.checkActionSecurity(name, action);
     if (!securityCheck.isValid) {
@@ -1055,11 +1056,7 @@ export default class Service<S = ServiceSettingSchema> {
           schemaProperty: 'actions.' + name + '.handler',
           expectedType: 'function',
           actualValue: action.handler,
-          suggestions: [
-            '确保动作定义包含有效的handler函数',
-            '检查handler属性是否正确设置',
-            '验证函数定义的语法'
-          ]
+          suggestions: ['确保动作定义包含有效的handler函数', '检查handler属性是否正确设置', '验证函数定义的语法']
         },
         this.logger || undefined
       );
@@ -1073,7 +1070,7 @@ export default class Service<S = ServiceSettingSchema> {
    */
   private _configureActionProperties(action: GenericObject, name: string): void {
     action.rawName = action.name || name;
-    
+
     // 设置动作名称
     if (this.settings?.$noServiceNamePrefix !== true) {
       action.name = this.fullName + '.' + action.rawName;
@@ -1111,16 +1108,16 @@ export default class Service<S = ServiceSettingSchema> {
   public _createEvent(eventDef: any, name: string) {
     // 解析事件定义
     const event = this._parseEventDefinition(eventDef, name);
-    
+
     // 验证事件定义
     this._validateEventDefinition(event, name);
-    
+
     // 处理事件处理器
     const handler = this._processEventHandler(event);
-    
+
     // 配置事件属性
     this._configureEventProperties(event, name, handler);
-    
+
     return event;
   }
 
@@ -1192,7 +1189,7 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-    
+
     // 边界检查
     if (!BoundaryChecker.checkEventCount(Object.keys(this.schema?.events || {}).length + 1)) {
       throw EnhancedErrorHandler.createServiceSchemaError(
@@ -1207,7 +1204,7 @@ export default class Service<S = ServiceSettingSchema> {
         this.logger || undefined
       );
     }
-    
+
     // 安全检查
     const securityCheck = SecurityChecker.checkEventSecurity(name, event);
     if (!securityCheck.isValid) {
@@ -1278,7 +1275,7 @@ export default class Service<S = ServiceSettingSchema> {
   private _configureEventProperties(event: GenericObject, name: string, handler: any): void {
     if (!event.name) event.name = name;
     event.service = this;
-    
+
     const self = this;
 
     if (isFunction(handler)) {
@@ -1314,7 +1311,7 @@ export default class Service<S = ServiceSettingSchema> {
     if (!mixinSchema && !serviceSchema) return {};
     if (!serviceSchema) return _.cloneDeep(mixinSchema);
     if (!mixinSchema) return _.cloneDeep(serviceSchema);
-    
+
     // 修复：必须使用深拷贝，否则会污染原始mixin定义
     const res = _.cloneDeep(mixinSchema);
     const mods = _.cloneDeep(serviceSchema);
