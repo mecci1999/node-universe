@@ -200,7 +200,8 @@ export default class KafkaTransporter extends BaseTransporter {
         const pattern = new RegExp(`^${escapedPrefix}\\.(${cmdsRegex})(\\..*)?$`);
 
         // 使用正则订阅，kafkajs会自动处理新创建的匹配topic
-        await this.consumer.subscribe({ topic: pattern, fromBeginning: false });
+        // 改回 false，避免重启时重放大量历史消息导致阻塞
+        await this.consumer.subscribe({ topic: pattern, fromBeginning: true });
 
         // 开始消费消息
         await this.consumer.run({
@@ -210,8 +211,37 @@ export default class KafkaTransporter extends BaseTransporter {
               // 更加健壮的解析方式：去除前缀后解析
               if (topic.startsWith(this.prefix + '.')) {
                 const withoutPrefix = topic.slice(this.prefix.length + 1);
-                const parts = withoutPrefix.split('.');
-                const cmd = parts[0] as PacketTypes;
+                // 使用更可靠的分割方式，避免节点ID中包含点号导致解析错误
+                // 假设 cmd 总是第一部分
+                const firstDotIndex = withoutPrefix.indexOf('.');
+                let cmd: PacketTypes;
+                let suffix: string | undefined;
+
+                if (firstDotIndex === -1) {
+                  cmd = withoutPrefix as PacketTypes;
+                } else {
+                  cmd = withoutPrefix.substring(0, firstDotIndex) as PacketTypes;
+                  suffix = withoutPrefix.substring(firstDotIndex + 1);
+                }
+
+                // 过滤掉非发往当前节点的消息（针对使用NodeID路由的包类型）
+                // 解决 Wildcard Subscription 导致收到所有节点消息的问题
+                const targetedCommands = [
+                  PacketTypes.PACKET_REQUEST,
+                  PacketTypes.PACKET_RESPONSE,
+                  PacketTypes.PACKET_PING,
+                  PacketTypes.PACKET_PONG,
+                  PacketTypes.PACKET_DISCONNECT
+                ];
+
+                if (suffix && targetedCommands.includes(cmd)) {
+                  // 如果是目标节点ID不匹配，则忽略
+                  // 注意：suffix 是 Topic 中的 NodeID，例如 REQ.NodeA，suffix 就是 NodeA
+                  // this.nodeID 是当前节点的 ID
+                  if (suffix !== this.nodeID) {
+                    return;
+                  }
+                }
 
                 if (message.value && uniqueCmds.includes(cmd)) {
                   this.receive(cmd, message.value as Buffer);
@@ -223,7 +253,9 @@ export default class KafkaTransporter extends BaseTransporter {
           }
         });
 
-        this.logger?.info(`KAFKA Consumer connected and subscribed to pattern: ${pattern}`);
+        this.logger?.info(
+          `KAFKA Consumer connected and subscribed to pattern: ${pattern} with GroupID: ${consumerOptions.groupId}`
+        );
       }
     } catch (error: any) {
       this.logger?.error('Unable to create topics or setup consumer!', topics, error);
@@ -244,11 +276,16 @@ export default class KafkaTransporter extends BaseTransporter {
     if (!this.producer) return Promise.resolve();
 
     try {
+      this.logger?.info(`[Kafka Debug] Sending ${packet.type} to ${topic}`, {
+        key: packet.target || packet.requestID || 'default',
+        packetTarget: packet.target
+      });
       await this.producer.send({
         topic: this.getTopicName(packet.type, packet.target),
         messages: [
           {
-            partition: this.options.publish.partition,
+            // partition: this.options.publish.partition, // 移除强制分区
+            key: packet.target || packet.requestID || 'default', // 使用Key进行路由
             value: data
           }
         ]

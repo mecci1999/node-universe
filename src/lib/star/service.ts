@@ -421,16 +421,7 @@ export default class Service<S = ServiceSettingSchema> {
 
       // 创建动作模型
       let innerAction = this._createAction(action, name);
-      // DEBUG: 强制打印注册的动作名称
-      if (this.logger) {
-        this.logger.info(
-          `[DEBUG-ACTION-REG] Registering action: '${innerAction.name}' (raw: ${innerAction.rawName}) for service '${this.fullName}'`
-        );
-      } else {
-        console.log(
-          `[DEBUG-ACTION-REG] Registering action: '${innerAction.name}' (raw: ${innerAction.rawName}) for service '${this.fullName}'`
-        );
-      }
+
       serviceSpecification.actions[innerAction.name] = innerAction;
 
       const wrappedHandler = this.star.middlewares?.wrapHandler(

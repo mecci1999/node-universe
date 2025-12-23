@@ -32,13 +32,22 @@ export default function (star: Star) {
         return promiseTimeout(p, ctx.options.timeout as number).catch((err) => {
           if (err) {
             const nodeID = ctx.nodeID;
-            star.logger?.warn(`Request '${actionName}' is timed out.`, {
-              requestID: ctx.requestID,
-              nodeID,
-              timeout: ctx.options.timeout
-            });
-            err = new RequestTimeoutError({ action: actionName, nodeID: nodeID || 'Unknown' });
-            star.metrics?.increment(METRIC.UNIVERSE_REQUEST_TIMEOUT_TOTAL, { service, action: actionName });
+            // 检查是否真的是超时错误
+            const isTimeoutError =
+              err.message === 'async function access timeout' || err.message === 'Action execution timed out';
+
+            if (isTimeoutError) {
+              star.logger?.warn(`Request '${actionName}' is timed out. Expected: ${ctx.options.timeout}ms`, {
+                requestID: ctx.requestID,
+                nodeID,
+                timeout: ctx.options.timeout
+              });
+              err = new RequestTimeoutError({ action: actionName, nodeID: nodeID || 'Unknown' });
+              star.metrics?.increment(METRIC.UNIVERSE_REQUEST_TIMEOUT_TOTAL, { service, action: actionName });
+            } else {
+              // 如果不是超时错误，打印真实的错误信息以便调试
+              star.logger?.error(`Request '${actionName}' failed (not timeout). Error:`, err);
+            }
           }
 
           throw err;
