@@ -201,7 +201,7 @@ export default class KafkaTransporter extends BaseTransporter {
 
         // 使用正则订阅，kafkajs会自动处理新创建的匹配topic
         // 改回 false，避免重启时重放大量历史消息导致阻塞
-        await this.consumer.subscribe({ topic: pattern, fromBeginning: true });
+        await this.consumer.subscribe({ topic: pattern, fromBeginning: false });
 
         // 开始消费消息
         await this.consumer.run({

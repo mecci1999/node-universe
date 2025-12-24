@@ -152,7 +152,7 @@ export default class BaseDiscoverer {
 
       // 检查是否超时
       if (now - node.lastHeartbeatTime > (this.options.heartbeatTimeout as number)) {
-        this.logger?.warn(`Heartbeat is not received from '${node.id}' node.`);
+        // this.logger?.warn(`Heartbeat is not received from '${node.id}' node. Last: ${node.lastHeartbeatTime} Now: ${now}`);
         this.registry?.nodes.disconnected(node.id, true);
       }
     });
