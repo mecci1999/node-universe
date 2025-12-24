@@ -276,10 +276,10 @@ export default class KafkaTransporter extends BaseTransporter {
     if (!this.producer) return Promise.resolve();
 
     try {
-      this.logger?.info(`[Kafka Debug] Sending ${packet.type} to ${topic}`, {
-        key: packet.target || packet.requestID || 'default',
-        packetTarget: packet.target
-      });
+      // this.logger?.info(`[Kafka Debug] Sending ${packet.type} to ${topic}`, {
+      //   key: packet.target || packet.requestID || 'default',
+      //   packetTarget: packet.target
+      // });
       await this.producer.send({
         topic: this.getTopicName(packet.type, packet.target),
         messages: [
