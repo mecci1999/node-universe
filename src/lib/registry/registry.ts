@@ -405,7 +405,7 @@ export default class Registry {
 
     const rawInfo = _.pick(node, ['ipList', 'hostname', 'instanceID', 'client', 'config', 'port', 'seq', 'metadata']);
 
-    if (!isStopping && (this.star.started || incSeq)) {
+    if (!isStopping) {
       rawInfo.services = this.services.getLocalNodeServices();
     } else {
       rawInfo.services = [];

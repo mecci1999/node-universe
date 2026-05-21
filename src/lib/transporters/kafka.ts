@@ -163,15 +163,19 @@ export default class KafkaTransporter extends BaseTransporter {
     const uniqueCmds = [...new Set(cmdPatterns)];
 
     try {
-      // 使用管理员客户端创建当前实例的topics
+      // 使用管理员客户端尽力创建当前实例的 topics；本地开发环境下 Kafka metadata 偶发超时不应阻塞消费者订阅
       if (this.admin) {
-        await this.admin.createTopics({
-          topics: currentTopicsMap.map((topic) => ({
-            topic,
-            numPartitions: 1,
-            replicationFactor: 1
-          }))
-        });
+        this.admin
+          .createTopics({
+            topics: currentTopicsMap.map((topic) => ({
+              topic,
+              numPartitions: 1,
+              replicationFactor: 1
+            }))
+          })
+          .catch((error) => {
+            this.logger?.warn('Kafka topic creation skipped or delayed', error?.message || error);
+          });
       }
 
       // 创建消费者实例
@@ -200,7 +204,7 @@ export default class KafkaTransporter extends BaseTransporter {
         const pattern = new RegExp(`^${escapedPrefix}\\.(${cmdsRegex})(\\..*)?$`);
 
         // 使用正则订阅，kafkajs会自动处理新创建的匹配topic
-        // 改回 false，避免重启时重放大量历史消息导致阻塞
+        // 改回 false，避免重启时重放大量历史消息导致阻塞；服务发现由启动后的 DISCOVER 重试补偿
         await this.consumer.subscribe({ topic: pattern, fromBeginning: false });
 
         // 开始消费消息

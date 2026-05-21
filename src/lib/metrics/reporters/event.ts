@@ -52,11 +52,11 @@ export default class EventRepoter extends BaseReporter {
 
     if (this.options.broadcast) {
       // 使用广播进行通信
-      this.logger?.debug(`Send metrics.snapshot (${list?.length} metrics) broadcast events.`);
+      // this.logger?.debug(`Send metrics.snapshot (${list?.length} metrics) broadcast events.`);
       this.star?.broadcast(this.options.eventName, list, { groups: this.options.groups });
     } else {
       // 使用事件通讯进行通信
-      this.logger?.debug(`Send metrics.snapshot (${list?.length} metrics) events.`);
+      // this.logger?.debug(`Send metrics.snapshot (${list?.length} metrics) events.`);
       this.star?.emit(this.options.eventName, list, { groups: this.options.groups });
     }
 

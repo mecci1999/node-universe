@@ -12,8 +12,8 @@ export const LEVELS: BaseLoggerLevels[] = [
   BaseLoggerLevels.fatal, // 崩溃
   BaseLoggerLevels.error, // 错误
   BaseLoggerLevels.warn, // 警告
-  BaseLoggerLevels.debug, // debug
   BaseLoggerLevels.info, // 信息
+  BaseLoggerLevels.debug, // debug
   BaseLoggerLevels.trace // 跟踪
 ];
 

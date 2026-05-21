@@ -153,12 +153,18 @@ export default class Transit {
       } else {
         await this.makeSubscriptions();
       }
+
+      this.connected = true;
       // 注册发现其他的节点
+      if (!wasReconnect) await this.discoverer?.sendLocalNodeInfo();
       await this.discoverer?.discoverAllNodes();
+      setTimeout(() => this.discoverer?.discoverAllNodes(), 3000).unref();
+      setTimeout(() => this.discoverer?.discoverAllNodes(), 10000).unref();
+      setTimeout(() => this.discoverer?.sendLocalNodeInfo(), 1000).unref();
+      setTimeout(() => this.discoverer?.sendLocalNodeInfo(), 5000).unref();
       // 等待500ms时间，接收数据包
       await sleep(500);
 
-      this.connected = true;
       // 性能注册
       this.metrics?.set(METRIC.UNIVERSE_TRANSIT_CONNECTED, 1);
       // 广播
@@ -369,7 +375,11 @@ export default class Transit {
 
       if (payload.sender === this.nodeID) {
         if (cmd === PacketTypes.PACKET_INFO && payload.instanceID !== this.instanceID) {
-          this.star.fatal('Star has detected a nodeID conflict, use unique nodeIDs. Star Stopped.');
+          this.logger.warn('Ignoring stale INFO packet from same nodeID.', {
+            nodeID: this.nodeID,
+            localInstanceID: this.instanceID,
+            remoteInstanceID: payload.instanceID
+          });
 
           return Promise.resolve(false);
         }
@@ -1010,7 +1020,7 @@ export default class Transit {
    * @param nodeID 发送的目标节点
    */
   public sendNodeInfo(info: any, nodeID: string): Promise<void> {
-    if (!this.connected || !this.isReady) return Promise.resolve();
+    if (!this.connected) return Promise.resolve();
 
     return this.publish(
       new Packet(PacketTypes.PACKET_INFO, nodeID, {

@@ -73,7 +73,7 @@ const defaultOptions = {
   maxCallLevel: 0,
 
   heartbeatInterval: 10,
-  heartbeatTimeout: 30,
+  heartbeatTimeout: 120,
 
   tracking: {
     enabled: false,
