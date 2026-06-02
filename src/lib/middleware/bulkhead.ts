@@ -250,22 +250,26 @@ function bulkheadMiddleware(star: Star) {
         star.metrics?.register({
           name: METRIC.UNIVERSE_REQUEST_BULKHEAD_INFLIGHT,
           type: METRIC.TYPE_GAUGE,
-          labelNames: ['action', 'service']
+          labelNames: ['action', 'service'],
+          description: '当前正在执行的隔离动作请求数量'
         });
         star.metrics?.register({
           name: METRIC.UNIVERSE_REQUEST_BULKHEAD_QUEUE_SIZE,
           type: METRIC.TYPE_GAUGE,
-          labelNames: ['action', 'service']
+          labelNames: ['action', 'service'],
+          description: '当前等待执行的隔离动作请求队列长度'
         });
         star.metrics?.register({
           name: METRIC.UNIVERSE_EVENT_BULKHEAD_INFLIGHT,
           type: METRIC.TYPE_GAUGE,
-          labelNames: ['action', 'service']
+          labelNames: ['action', 'service'],
+          description: '当前正在执行的隔离事件处理数量'
         });
         star.metrics?.register({
           name: METRIC.UNIVERSE_EVENT_BULKHEAD_QUEUE_SIZE,
           type: METRIC.TYPE_GAUGE,
-          labelNames: ['action', 'service']
+          labelNames: ['action', 'service'],
+          description: '当前等待执行的隔离事件处理队列长度'
         });
       }
     },

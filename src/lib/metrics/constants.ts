@@ -24,6 +24,7 @@ export default {
 
   PROCESS_MEMORY_HEAP_SIZE_TOTAL: 'process.memory.heap.size.total', // 内存总大小 单位bytes
   PROCESS_MEMORY_HEAP_SIZE_USED: 'process.memory.heap.size.used', // 内存已使用量 单位bytes
+  PROCESS_MEMORY_HEAP_UTILIZATION: 'process.memory.heap.utilization', // 堆内存使用率
   PROCESS_MEMORY_RSS: 'process.memory.rss', // 进程中真正被加载到物理内存中 单位bytes
   PROCESS_MEMORY_EXTERNAL: 'process.memory.external', // 内存拓展 单位bytes
 
@@ -66,6 +67,7 @@ export default {
   OS_MEMORY_FREE: 'os.memory.free', // bytes
   OS_MEMORY_USED: 'os.memory.used', // bytes
   OS_MEMORY_TOTAL: 'os.memory.total', // bytes
+  OS_MEMORY_UTILIZATION: 'os.memory.utilization',
   OS_UPTIME: 'os.uptime', // seconds
   OS_TYPE: 'os.type',
   OS_RELEASE: 'os.release',

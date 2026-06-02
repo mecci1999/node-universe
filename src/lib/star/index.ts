@@ -1647,7 +1647,7 @@ export default class Star {
       ?.register({
         name: METRIC.UNIVERSE_NODE_TYPE,
         type: METRIC.TYPE_INFO,
-        description: 'Universe运行环境类型'
+        description: '宇宙节点当前运行环境类型'
       })
       ?.set('nodejs');
 
@@ -1655,7 +1655,7 @@ export default class Star {
       ?.register({
         name: METRIC.UNIVERSE_NODE_VERSIONS_UNIVERSE,
         type: METRIC.TYPE_INFO,
-        description: 'Universe版本号'
+        description: '宇宙框架版本号'
       })
       ?.set(Star.UNIVERSE_VERSION);
 
@@ -1663,7 +1663,7 @@ export default class Star {
       ?.register({
         name: METRIC.UNIVERSE_NODE_VERSIONS_PROTOCOL,
         type: METRIC.TYPE_INFO,
-        description: 'Universe协议版本号'
+        description: '宇宙通信协议版本号'
       })
       ?.set(Star.PROTOCOL_VERSION);
 
@@ -1673,7 +1673,7 @@ export default class Star {
       ?.register({
         name: METRIC.UNIVERSE_STAR_NAMESPACE,
         type: METRIC.TYPE_INFO,
-        description: '星球的名字'
+        description: '当前星实例命名空间'
       })
       ?.set(this.namespace || '<not defined>');
 
@@ -1681,7 +1681,7 @@ export default class Star {
       ?.register({
         name: METRIC.UNIVERSE_STAR_STARTED,
         type: METRIC.TYPE_GAUGE,
-        description: '星球开始运转'
+        description: '当前星实例是否已启动，1 表示已启动，0 表示未启动'
       })
       ?.set(0);
 
@@ -1689,7 +1689,7 @@ export default class Star {
       ?.register({
         name: METRIC.UNIVERSE_STAR_LOCAL_SERVICES_TOTAL,
         type: METRIC.TYPE_GAUGE,
-        description: '星球的服务人造卫星数量'
+        description: '当前星实例已注册的本地服务数量'
       })
       ?.set(0);
 
@@ -1697,7 +1697,7 @@ export default class Star {
       ?.register({
         name: METRIC.UNIVERSE_STAR_MIDDLEWARES_TOTAL,
         type: METRIC.TYPE_GAUGE,
-        description: '星球的人造卫星中间件数量'
+        description: '当前星实例已注册的中间件数量'
       })
       ?.set(0);
   }

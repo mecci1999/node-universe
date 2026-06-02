@@ -53,77 +53,87 @@ export default class BaseCacher {
    * 注册缓存相关指标
    */
   private registerStarCacherMetrics() {
-    // 缓存获取数量
+    // 缓存读取总次数
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_GET_TOTAL,
       type: METRIC.TYPE_COUNTER,
+      description: '缓存读取总次数',
       rate: true
     });
 
-    // 缓存获取时间，单位毫秒
+    // 缓存读取耗时，单位毫秒
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_GET_TIME,
       type: METRIC.TYPE_HISTOGRAM,
+      description: '缓存读取耗时（毫秒）',
       quantiles: true,
       unit: METRIC.UNIT_MILLISECONDS
     });
 
-    // 缓存发现的数量
+    // 缓存命中次数
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_FOUND_TOTAL,
       type: METRIC.TYPE_COUNTER,
+      description: '缓存命中总次数',
       rate: true
     });
 
-    // 缓存存储的数量
+    // 缓存写入次数
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_SET_TOTAL,
       type: METRIC.TYPE_COUNTER,
+      description: '缓存写入总次数',
       rate: true
     });
 
-    // 缓存存储花费时间，单位毫秒
+    // 缓存写入耗时，单位毫秒
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_SET_TIME,
       type: METRIC.TYPE_HISTOGRAM,
+      description: '缓存写入耗时（毫秒）',
       quantiles: true,
       unit: METRIC.UNIT_MILLISECONDS
     });
 
-    // 缓存删除的数量
+    // 缓存删除次数
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_DEL_TOTAL,
       type: METRIC.TYPE_COUNTER,
+      description: '缓存删除总次数',
       rate: true
     });
 
-    // 缓存删除花费时间，单位毫秒
+    // 缓存删除耗时，单位毫秒
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_DEL_TIME,
       type: METRIC.TYPE_HISTOGRAM,
+      description: '缓存删除耗时（毫秒）',
       quantiles: true,
       unit: METRIC.UNIT_MILLISECONDS
     });
 
-    // 缓存清除数量
+    // 缓存清理次数
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_CLEAN_TOTAL,
       type: METRIC.TYPE_COUNTER,
+      description: '按匹配规则清理缓存的总次数',
       rate: true
     });
 
-    // 缓存清除花费时间，单位毫秒
+    // 缓存清理耗时，单位毫秒
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_CLEAN_TIME,
       type: METRIC.TYPE_HISTOGRAM,
+      description: '按匹配规则清理缓存的耗时（毫秒）',
       quantiles: true,
       unit: METRIC.UNIT_MILLISECONDS
     });
 
-    // 缓存过期数量
+    // 缓存过期次数
     this.metrics?.register({
       name: METRIC.UNIVERSE_CACHER_EXPIRED_TOTAL,
       type: METRIC.TYPE_COUNTER,
+      description: '读取或清理时发现缓存已过期的总次数',
       rate: true
     });
   }

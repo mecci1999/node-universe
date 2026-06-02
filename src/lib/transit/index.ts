@@ -110,7 +110,7 @@ export default class Transit {
       ?.register({
         name: METRIC.UNIVERSE_TRANSIT_READY,
         type: METRIC.TYPE_GAUGE,
-        description: '通信模块已准备'
+        description: '通信模块是否已完成准备，1 表示已准备，0 表示未准备'
       })
       ?.set(0);
 
@@ -118,7 +118,7 @@ export default class Transit {
       ?.register({
         name: METRIC.UNIVERSE_TRANSIT_CONNECTED,
         type: METRIC.TYPE_GAUGE,
-        description: '通信模块已连接'
+        description: '通信模块是否已连接传输器，1 表示已连接，0 表示未连接'
       })
       ?.set(0);
 
@@ -126,20 +126,20 @@ export default class Transit {
       name: METRIC.UNIVERSE_TRANSIT_PONG_TIME,
       type: METRIC.TYPE_GAUGE,
       labelNames: ['targetNodeID'],
-      description: 'ping操作时间'
+      description: '与目标节点的心跳往返耗时'
     });
 
     this.metrics?.register({
       name: METRIC.UNIVERSE_TRANSIT_PONG_SYSTIME_DIFF,
       type: METRIC.TYPE_GAUGE,
       labelNames: ['targetNodeID'],
-      description: '不同节点间的系统时间'
+      description: '与目标节点的系统时间差值'
     });
 
     this.metrics?.register({
       name: METRIC.UNIVERSE_TRANSIT_ORPHAN_RESPONSE_TOTAL,
       type: METRIC.TYPE_COUNTER,
-      description: '响应回复次数'
+      description: '收到无法匹配请求的孤儿响应总次数'
     });
   }
 

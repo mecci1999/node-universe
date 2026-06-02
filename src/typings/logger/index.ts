@@ -25,17 +25,36 @@ export interface FormattedLoggerOptions {
   interval: number; // 日志更新时间
 }
 
-export interface LogLevelConfig {
-  type?: BaseLoggerLevels; // 类型
-  options?: GenericObject;
-}
-
 export interface LoggerBindings {
   nodeID?: string;
   namespace?: string;
   mod?: string;
   svc?: string;
   ver?: string;
+}
+
+export type LoggerSuppressRule = string | RegExp | ((entry: {
+  type: string;
+  args: any[];
+  bindings: LoggerBindings;
+}) => boolean);
+
+export type LoggerCategoryEnabledConfig = boolean | Record<string, boolean>;
+
+export type LoggerLevelName = BaseLoggerLevels | `${BaseLoggerLevels}`;
+
+export interface LoggerOptions extends GenericObject {
+  level?: LoggerLevelName | Record<string, LoggerLevelName>;
+  enabled?: LoggerCategoryEnabledConfig;
+  categories?: LoggerCategoryEnabledConfig;
+  categoryEnabled?: LoggerCategoryEnabledConfig;
+  suppress?: LoggerSuppressRule | LoggerSuppressRule[];
+  suppressLogs?: LoggerSuppressRule | LoggerSuppressRule[];
+}
+
+export interface LogLevelConfig {
+  type?: string; // logger 类型，例如 Console、Pino、File
+  options?: LoggerOptions;
 }
 
 // 日志实例类

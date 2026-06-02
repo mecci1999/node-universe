@@ -16,12 +16,12 @@ function registerCommonMetrics(registry: MetricRegistry) {
   registry.register({
     name: METRIC.UNIVERSE_METRICS_COMMON_COLLECT_TOTAL,
     type: METRIC.TYPE_COUNTER,
-    description: '所有搜集的指标数量'
+    description: '累计执行通用指标采集的次数'
   });
   registry.register({
     name: METRIC.UNIVERSE_METRICS_COMMON_COLLECT_TIME,
     type: METRIC.TYPE_GAUGE,
-    description: '搜集指标所需要的时间',
+    description: '单次通用指标采集耗时',
     unit: METRIC.UNIT_MILLISECONDS
   });
 
@@ -31,7 +31,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     name: METRIC.PROCESS_ARGUMENTS,
     type: METRIC.TYPE_INFO,
     labelNames: ['index'],
-    desciption: '进程相关参数'
+    description: '进程启动参数'
   });
 
   process.argv.map((arg, index) => {
@@ -43,14 +43,14 @@ function registerCommonMetrics(registry: MetricRegistry) {
   const process_pid = registry.register({
     name: METRIC.PROCESS_PID,
     type: METRIC.TYPE_INFO,
-    description: '进程的PID'
+    description: '当前进程 ID'
   });
   process_pid?.set(process.pid);
 
   const process_ppid = registry.register({
     name: METRIC.PROCESS_PPID,
     type: METRIC.TYPE_INFO,
-    description: '进程的PPID'
+    description: '父进程 ID'
   });
   process_ppid?.set(process.ppid);
 
@@ -58,7 +58,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     name: METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程堆内存大小'
+    description: '进程堆内存总大小'
   });
 
   registry.register({
@@ -69,17 +69,23 @@ function registerCommonMetrics(registry: MetricRegistry) {
   });
 
   registry.register({
+    name: METRIC.PROCESS_MEMORY_HEAP_UTILIZATION,
+    type: METRIC.TYPE_GAUGE,
+    description: '进程堆内存使用率'
+  });
+
+  registry.register({
     name: METRIC.PROCESS_MEMORY_RSS,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程真正被加载到的物理内存大小'
+    description: '进程常驻内存集大小，即实际占用的物理内存'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_EXTERNAL,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程拓展内存大小'
+    description: '进程中 V8 管理之外的外部内存大小'
   });
 
   registry.register({
@@ -87,7 +93,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     type: METRIC.TYPE_GAUGE,
     labelNames: ['space'],
     unit: METRIC.UNIT_BYTE,
-    description: '进程所有的堆空间大小'
+    description: '指定 V8 堆空间的总大小'
   });
 
   registry.register({
@@ -95,7 +101,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     type: METRIC.TYPE_GAUGE,
     labelNames: ['space'],
     unit: METRIC.UNIT_BYTE,
-    description: '进程已使用的堆空间大小'
+    description: '指定 V8 堆空间已使用大小'
   });
 
   registry.register({
@@ -103,7 +109,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     type: METRIC.TYPE_GAUGE,
     labelNames: ['space'],
     unit: METRIC.UNIT_BYTE,
-    description: '进程可用的堆空间大小'
+    description: '指定 V8 堆空间可用大小'
   });
 
   registry.register({
@@ -111,97 +117,97 @@ function registerCommonMetrics(registry: MetricRegistry) {
     type: METRIC.TYPE_GAUGE,
     labelNames: ['space'],
     unit: METRIC.UNIT_BYTE,
-    description: '进程物理的堆空间大小'
+    description: '指定 V8 堆空间实际占用的物理内存大小'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_HEAP_SIZE_TOTAL,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程内存堆静态堆大小'
+    description: 'V8 堆内存总大小'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_EXECUTABLE_SIZE_TOTAL,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程内存堆静态可执行大小'
+    description: 'V8 堆中可执行代码占用的总大小'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_PHYSICAL_SIZE_TOTAL,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程内存堆静态物理大小'
+    description: 'V8 堆实际占用的物理内存总大小'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_AVAILABLE_SIZE_TOTAL,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程内存堆静态可使用大小'
+    description: 'V8 堆当前可用内存总大小'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_USED_HEAP_SIZE,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程堆状态使用的大小'
+    description: 'V8 堆已使用大小'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_HEAP_SIZE_LIMIT,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程堆状态大小限制'
+    description: 'V8 堆大小上限'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_MALLOCATED_MEMORY,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程堆统计错误定位的大小'
+    description: 'V8 已通过 malloc 分配的内存大小'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_PEAK_MALLOCATED_MEMORY,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '进程堆状态错置大小的峰值'
+    description: 'V8 通过 malloc 分配内存的历史峰值'
   });
 
   registry.register({
     name: METRIC.PROCESS_MEMORY_HEAP_STAT_ZAP_GARBAGE,
     type: METRIC.TYPE_GAUGE,
-    description: '进程堆静态垃圾回收'
+    description: 'V8 是否启用 zap garbage 模式'
   });
 
   registry.register({
     name: METRIC.PROCESS_UPTIME,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_SECONDS,
-    description: '进程更新时间'
+    description: '进程已运行时间'
   });
 
   registry.register({
     name: METRIC.PROCESS_INTERNAL_ACTIVE_HANDLES,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_HANDLE,
-    description: '正在活动的程序数量'
+    description: '进程当前活跃句柄数量'
   });
 
   registry.register({
     name: METRIC.PROCESS_INTERNAL_ACTIVE_REQUESTS,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_REQUEST,
-    description: '正在活动的请求数量'
+    description: '进程当前活跃请求数量'
   });
 
   registry
     .register({
       name: METRIC.PROCESS_VERSIONS_NODE,
       type: METRIC.TYPE_INFO,
-      description: '节点版本号'
+      description: 'Node.js 运行时版本号'
     })
     ?.set(process.versions.node);
 
@@ -211,7 +217,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     name: METRIC.OS_MEMORY_FREE,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_BYTE,
-    description: '系统闲置内存大小'
+    description: '系统空闲内存大小'
   });
 
   registry.register({
@@ -229,17 +235,23 @@ function registerCommonMetrics(registry: MetricRegistry) {
   });
 
   registry.register({
+    name: METRIC.OS_MEMORY_UTILIZATION,
+    type: METRIC.TYPE_GAUGE,
+    description: '系统内存使用率'
+  });
+
+  registry.register({
     name: METRIC.OS_UPTIME,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_SECONDS,
-    description: '系统更新时间'
+    description: '系统已运行时间'
   });
 
   registry
     .register({
       name: METRIC.OS_TYPE,
       type: METRIC.TYPE_INFO,
-      description: '系统类型'
+      description: '操作系统类型'
     })
     ?.set(os.type());
 
@@ -247,7 +259,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     .register({
       name: METRIC.OS_RELEASE,
       type: METRIC.TYPE_INFO,
-      description: '操作系统版本'
+      description: '操作系统发行版本'
     })
     ?.set(os.release());
 
@@ -255,7 +267,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     .register({
       name: METRIC.OS_HOSTNAME,
       type: METRIC.TYPE_INFO,
-      description: '系统主机名'
+      description: '操作系统主机名'
     })
     ?.set(os.hostname());
 
@@ -263,7 +275,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     .register({
       name: METRIC.OS_ARCH,
       type: METRIC.TYPE_INFO,
-      description: '系统线程架构'
+      description: '操作系统 CPU 架构'
     })
     ?.set(os.arch());
 
@@ -271,7 +283,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     .register({
       name: METRIC.OS_PLATFORM,
       type: METRIC.TYPE_INFO,
-      description: '操作系统平台'
+      description: '操作系统平台标识'
     })
     ?.set(os.platform());
 
@@ -281,7 +293,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     .register({
       name: METRIC.OS_USER_UID,
       type: METRIC.TYPE_INFO,
-      description: 'UID'
+      description: '当前运行用户 UID'
     })
     ?.set((userInfo as os.UserInfo<string>)?.uid);
 
@@ -289,7 +301,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     .register({
       name: METRIC.OS_USER_GID,
       type: METRIC.TYPE_INFO,
-      description: 'GID'
+      description: '当前运行用户 GID'
     })
     ?.set((userInfo as os.UserInfo<string>)?.gid);
 
@@ -297,7 +309,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     .register({
       name: METRIC.OS_USER_USERNAME,
       type: METRIC.TYPE_INFO,
-      description: '用户名'
+      description: '当前运行用户名'
     })
     ?.set((userInfo as os.UserInfo<string>)?.username);
 
@@ -305,7 +317,7 @@ function registerCommonMetrics(registry: MetricRegistry) {
     .register({
       name: METRIC.OS_USER_HOMEDIR,
       type: METRIC.TYPE_INFO,
-      description: '根目录'
+      description: '当前运行用户主目录'
     })
     ?.set((userInfo as os.UserInfo<string>)?.homedir);
 
@@ -313,88 +325,88 @@ function registerCommonMetrics(registry: MetricRegistry) {
     name: METRIC.OS_NETWORK_ADDRESS,
     type: METRIC.TYPE_INFO,
     labelNames: ['interface', 'family'],
-    description: '网络地址'
+    description: '网络接口地址'
   });
 
   registry.register({
     name: METRIC.OS_NETWORK_MAC,
     type: METRIC.TYPE_INFO,
     labelNames: ['interface', 'family'],
-    description: 'MAC地址'
+    description: '网络接口 MAC 地址'
   });
 
   registry.register({
     name: METRIC.OS_DATETIME_UNIX,
     type: METRIC.TYPE_GAUGE,
-    description: '系统当前日期时间格式'
+    description: '当前系统时间戳（毫秒）'
   });
 
   registry.register({
     name: METRIC.OS_DATETIME_ISO,
     type: METRIC.TYPE_INFO,
-    description: '镜像当前日期时间'
+    description: '当前系统时间的 ISO 字符串'
   });
 
   registry.register({
     name: METRIC.OS_DATETIME_UTC,
     type: METRIC.TYPE_INFO,
-    description: '当前UTC时间格式'
+    description: '当前系统时间的 UTC 字符串'
   });
 
   registry.register({
     name: METRIC.OS_DATETIME_TZ_OFFSET,
     type: METRIC.TYPE_GAUGE,
-    description: '时区偏移'
+    description: '当前系统时区相对 UTC 的偏移分钟数'
   });
 
   registry.register({
     name: METRIC.OS_CPU_LOAD_1,
     type: METRIC.TYPE_GAUGE,
-    description: 'CPU load1'
+    description: '系统最近 1 分钟平均负载'
   });
 
   registry.register({
     name: METRIC.OS_CPU_LOAD_5,
     type: METRIC.TYPE_GAUGE,
-    description: 'CPU load5'
+    description: '系统最近 5 分钟平均负载'
   });
 
   registry.register({
     name: METRIC.OS_CPU_LOAD_15,
     type: METRIC.TYPE_GAUGE,
-    description: 'CPU load15'
+    description: '系统最近 15 分钟平均负载'
   });
 
   registry.register({
     name: METRIC.OS_CPU_UTILIZATION,
     type: METRIC.TYPE_GAUGE,
-    description: 'CPU利用率'
+    description: '系统 CPU 平均使用率'
   });
 
   registry.register({
     name: METRIC.OS_CPU_USER,
     type: METRIC.TYPE_GAUGE,
-    description: 'CPU用户'
+    description: '所有 CPU 在用户态消耗的累计时间'
   });
 
   registry.register({
     name: METRIC.OS_CPU_SYSTEM,
     type: METRIC.TYPE_GAUGE,
-    description: 'CPU系统'
+    description: '所有 CPU 在系统态消耗的累计时间'
   });
 
   registry.register({
     name: METRIC.OS_CPU_TOTAL,
     type: METRIC.TYPE_GAUGE,
     unit: METRIC.UNIT_CPU,
-    description: 'CPU数量'
+    description: 'CPU 核心数量'
   });
 
   registry.register({
     name: METRIC.OS_CPU_INFO_MODEL,
     type: METRIC.TYPE_INFO,
     labelNames: ['index'],
-    description: 'CPU模型'
+    description: '指定 CPU 核心的型号'
   });
 
   registry.register({
@@ -402,21 +414,21 @@ function registerCommonMetrics(registry: MetricRegistry) {
     type: METRIC.TYPE_GAUGE,
     labelNames: ['index'],
     unit: METRIC.UNIT_GHZ,
-    description: 'CPU速度'
+    description: '指定 CPU 核心的频率'
   });
 
   registry.register({
     name: METRIC.OS_CPU_INFO_TIMES_USER,
     type: METRIC.TYPE_GAUGE,
     labelNames: ['index'],
-    description: 'CPU用户时间'
+    description: '指定 CPU 核心在用户态消耗的累计时间'
   });
 
   registry.register({
     name: METRIC.OS_CPU_INFO_TIMES_SYS,
     type: METRIC.TYPE_GAUGE,
     labelNames: ['index'],
-    description: 'CPU系统时间'
+    description: '指定 CPU 核心在系统态消耗的累计时间'
   });
 
   startGCWatcher(registry);
@@ -435,21 +447,21 @@ function startGCWatcher(registry: MetricRegistry) {
       name: METRIC.PROCESS_GC_TIME,
       type: METRIC.TYPE_GAUGE,
       unit: METRIC.UNIT_MILLISECONDS,
-      description: '垃圾回收时间'
+      description: '最近一次垃圾回收耗时'
     });
 
     registry.register({
       name: METRIC.PROCESS_GC_TOTAL_TIME,
       type: METRIC.TYPE_COUNTER,
       unit: METRIC.UNIT_MILLISECONDS,
-      description: '所有的垃圾回收花费时间'
+      description: '垃圾回收累计耗时'
     });
 
     registry.register({
       name: METRIC.PROCESS_GC_EXECUTED_TOTAL,
       type: METRIC.TYPE_COUNTER,
       labelNames: ['type'],
-      description: '执行垃圾回收的数量'
+      description: '按类型统计的垃圾回收执行次数'
     });
 
     // 使用Performance API监控GC事件
@@ -494,14 +506,14 @@ function startAlternativeHeapMonitoring(registry: MetricRegistry) {
        name: METRIC.PROCESS_MEMORY_HEAP_SIZE_USED,
        type: METRIC.TYPE_GAUGE,
        unit: METRIC.UNIT_BYTE,
-       description: '进程内存堆已使用大小'
+       description: '进程堆内存已使用大小'
      });
  
      registry.register({
        name: METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL,
        type: METRIC.TYPE_GAUGE,
        unit: METRIC.UNIT_BYTE,
-       description: '进程内存堆总大小'
+       description: '进程堆内存总大小'
      });
  
      // 使用定时器定期更新堆内存统计
@@ -529,24 +541,24 @@ function startEventLoopStats(registry: MetricRegistry) {
       name: METRIC.PROCESS_EVENTLOOP_LAG_MIN,
       type: METRIC.TYPE_GAUGE,
       unit: METRIC.UNIT_MILLISECONDS,
-      description: '事件循环最小时间'
+      description: '事件循环最小延迟'
     });
     registry.register({
       name: METRIC.PROCESS_EVENTLOOP_LAG_AVG,
       type: METRIC.TYPE_GAUGE,
       unit: METRIC.UNIT_MILLISECONDS,
-      description: '事件循环平均时间'
+      description: '事件循环平均延迟'
     });
     registry.register({
       name: METRIC.PROCESS_EVENTLOOP_LAG_MAX,
       type: METRIC.TYPE_GAUGE,
       unit: METRIC.UNIT_MILLISECONDS,
-      description: '事件循环最大时间'
+      description: '事件循环最大延迟'
     });
     registry.register({
       name: METRIC.PROCESS_EVENTLOOP_LAG_COUNT,
       type: METRIC.TYPE_GAUGE,
-      description: '事件循环延迟数量'
+      description: '事件循环延迟采样次数'
     });
 
     // 初始化事件循环监控器
@@ -580,6 +592,7 @@ function updateCommonMetrics(registry: MetricRegistry) {
 
   registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_TOTAL, procMem.heapTotal);
   registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_USED, procMem.heapUsed);
+  registry.set(METRIC.PROCESS_MEMORY_HEAP_UTILIZATION, procMem.heapTotal > 0 ? procMem.heapUsed / procMem.heapTotal : 0);
   registry.set(METRIC.PROCESS_MEMORY_RSS, procMem.rss);
   registry.set(METRIC.PROCESS_MEMORY_EXTERNAL, procMem.external);
 
@@ -617,6 +630,7 @@ function updateCommonMetrics(registry: MetricRegistry) {
   registry.set(METRIC.OS_MEMORY_FREE, freeMem);
   registry.set(METRIC.OS_MEMORY_TOTAL, totalMem);
   registry.set(METRIC.OS_MEMORY_USED, usedMem);
+  registry.set(METRIC.OS_MEMORY_UTILIZATION, totalMem > 0 ? usedMem / totalMem : 0);
   registry.set(METRIC.OS_UPTIME, os.uptime());
   registry.set(METRIC.OS_TYPE, os.type());
   registry.set(METRIC.OS_RELEASE, os.release());
@@ -692,7 +706,7 @@ function updateCommonMetrics(registry: MetricRegistry) {
             cpus.reduce((a, b) => a + b.times.user, 0)
           );
           registry.set(
-            METRIC.OS_CPU_USER,
+            METRIC.OS_CPU_SYSTEM,
             cpus.reduce((a, b) => a + b.times.sys, 0)
           );
 

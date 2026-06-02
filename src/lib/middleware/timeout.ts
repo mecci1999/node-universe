@@ -66,7 +66,7 @@ export default function (star: Star) {
           name: METRIC.UNIVERSE_REQUEST_TIMEOUT_TOTAL,
           type: METRIC.TYPE_COUNTER,
           labelNames: ['service', 'action'],
-          description: '超时请求的数量',
+          description: '执行超时的动作请求总次数',
           rate: true
         });
       }

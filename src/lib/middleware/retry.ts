@@ -72,7 +72,7 @@ const retryMiddleware = (star: Star) => {
           name: METRIC.UNIVERSE_REQUEST_RETRY_ATTEMPTS_TOTAL,
           type: METRIC.TYPE_COUNTER,
           labelNames: ['service', 'action'],
-          description: '重试次数',
+          description: '触发重试策略的动作调用总次数',
           rate: true
         });
       }

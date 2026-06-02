@@ -55,7 +55,7 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_COUNTER,
           labelNames: ['service', 'action', 'type', 'caller'],
           unit: METRIC.UNIT_REQUEST,
-          description: '微服务请求总数量',
+          description: '按服务、动作、调用方和调用类型统计的微服务请求总次数',
           rate: true
         });
         metrics?.register({
@@ -63,14 +63,14 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_GAUGE,
           labelNames: ['service', 'action', 'type', 'caller'],
           unit: METRIC.UNIT_REQUEST,
-          description: '微服务正在活跃状态的请求数量'
+          description: '当前正在执行的微服务请求数量'
         });
         metrics?.register({
           name: METRIC.UNIVERSE_REQUEST_ERROR_TOTAL,
           type: METRIC.TYPE_COUNTER,
-          labelNames: ['srvice', 'action', 'type', 'caller', 'errorName', 'errorCode', 'errorType'],
+          labelNames: ['service', 'action', 'type', 'caller', 'errorName', 'errorCode', 'errorType'],
           unit: METRIC.UNIT_REQUEST,
-          description: '返回错误的请求总数量',
+          description: '按错误信息统计的微服务请求失败总次数',
           rate: true
         });
         metrics?.register({
@@ -80,7 +80,7 @@ export default function metricsHandlerMiddleware(star: Star) {
           quantiles: true,
           buckets: true,
           unit: METRIC.UNIT_MILLISECONDS,
-          description: '请求耗时（毫秒）',
+          description: '微服务请求执行耗时（毫秒）',
           rate: true
         });
         metrics?.register({
@@ -88,7 +88,23 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_COUNTER,
           labelNames: ['level'],
           unit: METRIC.UNIT_REQUEST,
-          description: '按上下文级别统计的请求数量'
+          description: '按上下文调用层级统计的请求总次数'
+        });
+        metrics?.register({
+          name: METRIC.UNIVERSE_REQUEST_DIRECTCALL_TOTAL,
+          type: METRIC.TYPE_COUNTER,
+          labelNames: ['action'],
+          unit: METRIC.UNIT_REQUEST,
+          description: '直接调用单个动作的总次数',
+          rate: true
+        });
+        metrics?.register({
+          name: METRIC.UNIVERSE_REQUEST_MULTICALL_TOTAL,
+          type: METRIC.TYPE_COUNTER,
+          labelNames: ['mode'],
+          unit: METRIC.UNIT_REQUEST,
+          description: '批量调用动作的总次数',
+          rate: true
         });
 
         // 事件
@@ -97,7 +113,7 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_COUNTER,
           labelNames: ['event', 'groups'],
           unit: METRIC.UNIT_EVENT,
-          description: '触发的事件数量',
+          description: '调用事件触发方法的总次数',
           rate: true
         });
         metrics?.register({
@@ -105,7 +121,7 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_COUNTER,
           labelNames: ['event', 'groups'],
           unit: METRIC.UNIT_EVENT,
-          description: '广播事件的数量',
+          description: '调用事件广播方法的总次数',
           rate: true
         });
         metrics?.register({
@@ -113,7 +129,7 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_COUNTER,
           labelNames: ['event', 'groups'],
           unit: METRIC.UNIT_EVENT,
-          description: '本地广播事件的数量',
+          description: '调用本地事件广播方法的总次数',
           rate: true
         });
         metrics?.register({
@@ -121,7 +137,7 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_COUNTER,
           labelNames: ['service', 'group', 'event', 'caller'],
           unit: METRIC.UNIT_EVENT,
-          description: '接收到的事件数量',
+          description: '本地事件处理器接收事件的总次数',
           rate: true
         });
         metrics?.register({
@@ -129,24 +145,24 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_GAUGE,
           labelNames: ['service', 'group', 'event', 'caller'],
           unit: METRIC.UNIT_REQUEST,
-          description: '活跃事件执行的数量'
+          description: '当前正在执行的本地事件处理数量'
         });
         metrics?.register({
           name: METRIC.UNIVERSE_EVENT_RECEIVED_ERROR_TOTAL,
           type: METRIC.TYPE_COUNTER,
           labelNames: ['service', 'group', 'event', 'caller', 'errorName', 'errorCode', 'errorType'],
           unit: METRIC.UNIT_REQUEST,
-          description: '事件执行错误的数量',
+          description: '本地事件处理失败的总次数',
           rate: true
         });
         metrics?.register({
           name: METRIC.UNIVERSE_EVENT_RECEIVED_TIME,
           type: METRIC.TYPE_HISTOGRAM,
-          labelNames: ['services', 'group', 'event', 'caller'],
+          labelNames: ['service', 'group', 'event', 'caller'],
           quantiles: true,
           buckets: true,
           unit: METRIC.UNIT_MILLISECONDS,
-          description: '事件执行时间（毫秒）',
+          description: '本地事件处理耗时（毫秒）',
           rate: true
         });
 
@@ -156,7 +172,7 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_COUNTER,
           labelNames: ['type'],
           unit: METRIC.UNIT_PACKET,
-          description: '已发布数据包的数量',
+          description: '通信模块发布数据包的总次数',
           rate: true
         });
         metrics?.register({
@@ -164,20 +180,20 @@ export default function metricsHandlerMiddleware(star: Star) {
           type: METRIC.TYPE_COUNTER,
           labelNames: ['type'],
           unit: METRIC.UNIT_PACKET,
-          description: '接收到的数据包数量',
+          description: '通信模块接收数据包的总次数',
           rate: true
         });
         metrics?.register({
           name: METRIC.UNIVERSE_TRANSIT_REQUESTS_ACTIVE,
           type: METRIC.TYPE_GAUGE,
           unit: METRIC.UNIT_REQUEST,
-          description: '活动请求的数量'
+          description: '通信模块当前挂起请求数量'
         });
         metrics?.register({
           name: METRIC.UNIVERSE_TRANSIT_STREAMS_SEND_ACTIVE,
           type: METRIC.TYPE_GAUGE,
           unit: METRIC.UNIT_REQUEST,
-          description: '活动发送流的数量'
+          description: '通信模块当前挂起发送流数量'
         });
 
         // 底层传输模块
@@ -185,28 +201,28 @@ export default function metricsHandlerMiddleware(star: Star) {
           name: METRIC.UNIVERSE_TRANSPORTER_PACKETS_SENT_TOTAL,
           type: METRIC.TYPE_COUNTER,
           unit: METRIC.UNIT_PACKET,
-          description: '已发送数据包的数量',
+          description: '底层传输器发送数据包的总次数',
           rate: true
         });
         metrics?.register({
           name: METRIC.UNIVERSE_TRANSPORTER_PACKETS_SENT_BYTES,
           type: METRIC.TYPE_COUNTER,
           unit: METRIC.UNIT_BYTE,
-          description: '发送的字节数',
+          description: '底层传输器发送数据包的累计字节数',
           rate: true
         });
         metrics?.register({
           name: METRIC.UNIVERSE_TRANSPORTER_PACKETS_RECEIVED_TOTAL,
           type: METRIC.TYPE_COUNTER,
           unit: METRIC.UNIT_PACKET,
-          description: '接收数据包的数量',
+          description: '底层传输器接收数据包的总次数',
           rate: true
         });
         metrics?.register({
           name: METRIC.UNIVERSE_TRANSPORTER_PACKETS_RECEIVED_BYTES,
           type: METRIC.TYPE_COUNTER,
           unit: METRIC.UNIT_BYTE,
-          description: '接收字节的数量',
+          description: '底层传输器接收数据包的累计字节数',
           rate: true
         });
       }
@@ -275,7 +291,7 @@ export default function metricsHandlerMiddleware(star: Star) {
               group,
               caller: ctx.caller
             });
-            metrics?.decrement(METRIC.UNIVERSE_EVENT_RECEIVED_ERROR_TOTAL, {
+            metrics?.increment(METRIC.UNIVERSE_EVENT_RECEIVED_ERROR_TOTAL, {
               service,
               event: ctx.eventName,
               group,
@@ -289,6 +305,34 @@ export default function metricsHandlerMiddleware(star: Star) {
       };
 
       if (star.isMetricsEnabled()) {
+        return metricsMiddleware;
+      }
+
+      return next;
+    },
+
+    call(next: any) {
+      if (star.isMetricsEnabled()) {
+        const metricsMiddleware = (actionName: string, ...args: any[]) => {
+          metrics?.increment(METRIC.UNIVERSE_REQUEST_DIRECTCALL_TOTAL, { action: actionName });
+          return next.apply(this, [actionName, ...args]);
+        };
+
+        return metricsMiddleware;
+      }
+
+      return next;
+    },
+
+    mcall(next: any) {
+      if (star.isMetricsEnabled()) {
+        const metricsMiddleware = (def: any, ...args: any[]) => {
+          metrics?.increment(METRIC.UNIVERSE_REQUEST_MULTICALL_TOTAL, {
+            mode: Array.isArray(def) ? 'array' : 'object'
+          });
+          return next.apply(this, [def, ...args]);
+        };
+
         return metricsMiddleware;
       }
 

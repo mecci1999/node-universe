@@ -313,19 +313,19 @@ const circuitBreakerMiddleware = (star: Star) => {
             name: METRIC.UNIVERSE_CIRCUIT_STAR_OPENED_ACTIVE,
             type: METRIC.TYPE_GAUGE,
             labelNames: ['affectedNodeID', 'service', 'action'],
-            description: '活跃的打开状态的熔断器数量'
+            description: '当前处于打开状态的熔断器数量'
           });
           star.metrics.register({
             name: METRIC.UNIVERSE_CIRCUIT_STAR_OPENED_TOTAL,
             type: METRIC.TYPE_COUNTER,
             labelNames: ['affectedNodeID', 'service', 'action'],
-            description: '已打开的断路器数量'
+            description: '熔断器进入打开状态的累计次数'
           });
           star.metrics.register({
             name: METRIC.UNIVERSE_CIRCUIT_STAR_HALF_OPENED_ACTIVE,
             type: METRIC.TYPE_GAUGE,
             labelNames: ['affectedNodeID', 'service', 'action'],
-            description: '活跃的半开状态的断路器数量'
+            description: '当前处于半开状态的熔断器数量'
           });
         }
       }

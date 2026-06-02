@@ -70,7 +70,7 @@ export default function FallbackMiddleware(star: Star) {
           name: METRIC.UNIVERSE_REQUEST_FALLBACK_TOTAL,
           type: METRIC.TYPE_COUNTER,
           labelNames: ['service', 'action'],
-          description: '执行回退操作的请求数量',
+          description: '请求失败后成功执行回退逻辑的总次数',
           rate: true
         });
       }
