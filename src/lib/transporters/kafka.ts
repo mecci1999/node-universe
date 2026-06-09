@@ -197,15 +197,9 @@ export default class KafkaTransporter extends BaseTransporter {
         // 连接消费者
         await this.consumer.connect();
 
-        // 构建正则表达式以匹配所有相关的topics
-        // 格式: ^prefix\.(cmd1|cmd2|...)(\..*)?$
-        const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const cmdsRegex = uniqueCmds.join('|');
-        const pattern = new RegExp(`^${escapedPrefix}\\.(${cmdsRegex})(\\..*)?$`);
-
-        // 使用正则订阅，kafkajs会自动处理新创建的匹配topic
-        // 改回 false，避免重启时重放大量历史消息导致阻塞；服务发现由启动后的 DISCOVER 重试补偿
-        await this.consumer.subscribe({ topic: pattern, fromBeginning: false });
+        await Promise.all(
+          currentTopicsMap.map((topic) => this.consumer?.subscribe({ topic, fromBeginning: false }))
+        );
 
         // 开始消费消息
         await this.consumer.run({
@@ -228,25 +222,6 @@ export default class KafkaTransporter extends BaseTransporter {
                   suffix = withoutPrefix.substring(firstDotIndex + 1);
                 }
 
-                // 过滤掉非发往当前节点的消息（针对使用NodeID路由的包类型）
-                // 解决 Wildcard Subscription 导致收到所有节点消息的问题
-                const targetedCommands = [
-                  PacketTypes.PACKET_REQUEST,
-                  PacketTypes.PACKET_RESPONSE,
-                  PacketTypes.PACKET_PING,
-                  PacketTypes.PACKET_PONG,
-                  PacketTypes.PACKET_DISCONNECT
-                ];
-
-                if (suffix && targetedCommands.includes(cmd)) {
-                  // 如果是目标节点ID不匹配，则忽略
-                  // 注意：suffix 是 Topic 中的 NodeID，例如 REQ.NodeA，suffix 就是 NodeA
-                  // this.nodeID 是当前节点的 ID
-                  if (suffix !== this.nodeID) {
-                    return;
-                  }
-                }
-
                 if (message.value && uniqueCmds.includes(cmd)) {
                   this.receive(cmd, message.value as Buffer);
                 }
@@ -258,7 +233,7 @@ export default class KafkaTransporter extends BaseTransporter {
         });
 
         this.logger?.info(
-          `KAFKA Consumer connected and subscribed to pattern: ${pattern} with GroupID: ${consumerOptions.groupId}`
+          `KAFKA Consumer connected and subscribed to topics: ${currentTopicsMap.join(', ')} with GroupID: ${consumerOptions.groupId}`
         );
       }
     } catch (error: any) {

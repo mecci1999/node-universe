@@ -88,7 +88,7 @@ const defaultOptions = {
     stopDelay: 100,
     discoverer: {
       type: 'Local',
-      options: { heartbeatInterval: 10, heartbeatTimeout: 30 }
+      options: { heartbeatInterval: 10, heartbeatTimeout: 120 }
     }
   },
 
