@@ -186,8 +186,6 @@ export class LoggerFactory {
     // 获取日志处理方法
     const logHandlers = _.compact(appenders.map((app) => app.getLogHandler(bindings)));
 
-    // 服务是否拥有中间件
-    const hasNewLogEntryMiddleware = star.middlewares && star.middlewares.registeredHooks.newLogEntry;
     if (!isCategoryEnabled(categoryEnabled, bindings)) {
       LEVELS.forEach((type) => {
         logger[type] = noop;
@@ -198,11 +196,10 @@ export class LoggerFactory {
     }
 
     LEVELS.forEach((type) => {
-      if (logHandlers.length == 0 && !hasNewLogEntryMiddleware) return (logger[type] = noop);
-
       logger[type] = function (...args: any[]) {
         if (shouldSuppressLogEntry(suppressRules, type, args, bindings)) return;
 
+        const hasNewLogEntryMiddleware = star.middlewares && star.middlewares.registeredHooks.newLogEntry;
         if (hasNewLogEntryMiddleware)
           star.middlewares && star.middlewares?.callSyncHandlers('newLogEntry', [type, args, bindings], {});
 

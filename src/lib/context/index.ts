@@ -261,7 +261,7 @@ export default class Context {
       return Promise.reject(new MaxCallLevelError({ nodeID: this.star.nodeID || '', level: this.level }));
     }
 
-    let p = this.star.call(actionName, params, options);
+    let p = this.star.call(actionName, params, _options);
 
     return p
       .then((res) => {

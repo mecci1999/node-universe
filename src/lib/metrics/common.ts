@@ -469,7 +469,7 @@ function startGCWatcher(registry: MetricRegistry) {
       const entries = list.getEntries();
       for (const entry of entries) {
         if (entry.entryType === 'gc') {
-          const gcEntry = entry as any;
+          const gcEntry = entry as { duration: number; detail?: { kind?: number | string }; kind?: number | string };
           const duration = gcEntry.duration;
           
           // 设置当前GC时间
@@ -479,7 +479,7 @@ function startGCWatcher(registry: MetricRegistry) {
           registry.increment(METRIC.PROCESS_GC_TOTAL_TIME, null, duration);
           
           // 根据GC类型增加计数
-          const gcType = gcEntry.kind || 'unknown';
+          const gcType = gcEntry.detail?.kind || gcEntry.kind || 'unknown';
           registry.increment(METRIC.PROCESS_GC_EXECUTED_TOTAL, { type: gcType });
         }
       }
