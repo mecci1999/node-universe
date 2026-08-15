@@ -93,8 +93,9 @@ export default class ActionCatalog {
    * 移除某个服务的所有动作
    */
   public removeByService(service: ServiceItem) {
-    this.actions.forEach((list) => {
+    this.actions.forEach((list, name) => {
       list.removeByService(service);
+      if (list.count() === 0) this.actions.delete(name);
     });
   }
 
@@ -105,7 +106,10 @@ export default class ActionCatalog {
    */
   public remove(name: string, nodeID: string) {
     const list = this.actions.get(name);
-    if (list) list.removeByNodeID(nodeID);
+    if (list) {
+      list.removeByNodeID(nodeID);
+      if (list.count() === 0) this.actions.delete(name);
+    }
   }
 
   /**

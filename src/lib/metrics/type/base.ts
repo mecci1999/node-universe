@@ -75,8 +75,20 @@ export default class BaseMetric {
    * 清除指标值
    */
   public clear() {
+    this.disposeValues();
     this.values = new Map();
     this.changed(null);
+  }
+
+  public dispose() {
+    this.disposeValues();
+  }
+
+  protected disposeValues() {
+    this.values.forEach((item) => {
+      item.rate?.dispose();
+      item.quantileValues?.dispose();
+    });
   }
 
   /**

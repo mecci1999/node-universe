@@ -162,8 +162,9 @@ export default class EventCatalog {
    * 移除某个服务的所有动作
    */
   public removeByService(service: ServiceItem) {
-    this.events.forEach((list) => {
+    this.events = this.events.filter((list) => {
       list.removeByService(service);
+      return list.count() > 0;
     });
   }
 
@@ -173,8 +174,9 @@ export default class EventCatalog {
    * @param nodeID
    */
   public remove(name: string, nodeID: string) {
-    this.events.forEach((item) => {
+    this.events = this.events.filter((item) => {
       if (item.name === name) item.removeByNodeID(nodeID);
+      return item.count() > 0;
     });
   }
 

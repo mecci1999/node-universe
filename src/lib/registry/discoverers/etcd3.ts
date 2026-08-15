@@ -54,4 +54,10 @@ export default class Etcd3Discoverer extends BaseDiscoverer {
 
     this.client = new Etcd3(this.options.etcd);
   }
+
+  public stop(): Promise<void> {
+    this.client?.close();
+    this.client = null;
+    return super.stop();
+  }
 }

@@ -2,8 +2,9 @@ import _ from 'lodash';
 import { StarDisconnectedError } from '../error';
 import Packet from '../packets';
 import { GenericObject } from '@/typings';
-import Transit from '../transit';
-import Star from '../star';
+import type Transit from '../transit';
+import type Star from '../star';
+import { PROTOCOL_VERSION } from '../star/protocol';
 import { LoggerInstance } from '@/typings/logger';
 import { PacketTypes } from '@/typings/packets';
 
@@ -224,7 +225,7 @@ export default class BaseTransporter {
    * 序列化需要发送的包
    */
   public serialize(packet: Packet): Buffer | null {
-    packet.payload.version = Star.PROTOCOL_VERSION;
+    packet.payload.version = PROTOCOL_VERSION;
     packet.payload.sender = this.nodeID;
 
     if (!(this.star && this.star.serializer)) return null;

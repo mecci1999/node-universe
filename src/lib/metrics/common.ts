@@ -6,6 +6,27 @@ import MetricRegistry from './registry';
 import { monitorEventLoopDelay } from 'monitor-event-loop-delay';
 import { PerformanceObserver } from 'perf_hooks';
 
+interface CommonMetricsResources {
+  gcObserver: PerformanceObserver | null;
+  heapStatsInterval: NodeJS.Timeout | null;
+  eventLoopMonitor: ReturnType<typeof monitorEventLoopDelay> | null;
+}
+
+const commonMetricsResources = new WeakMap<MetricRegistry, CommonMetricsResources>();
+
+function getCommonMetricsResources(registry: MetricRegistry): CommonMetricsResources {
+  let resources = commonMetricsResources.get(registry);
+  if (!resources) {
+    resources = {
+      gcObserver: null,
+      heapStatsInterval: null,
+      eventLoopMonitor: null
+    };
+    commonMetricsResources.set(registry, resources);
+  }
+  return resources;
+}
+
 /**
  * 注册通用指标
  */
@@ -487,6 +508,7 @@ function startGCWatcher(registry: MetricRegistry) {
     
     // 开始观察GC事件
     obs.observe({ entryTypes: ['gc'] });
+    getCommonMetricsResources(registry).gcObserver = obs;
     
     registry.logger.debug('GC monitoring started using Performance API');
   } catch (error) {
@@ -517,7 +539,9 @@ function startAlternativeHeapMonitoring(registry: MetricRegistry) {
      });
  
      // 使用定时器定期更新堆内存统计
-     const heapStatsInterval = setInterval(() => {
+      const resources = getCommonMetricsResources(registry);
+      if (resources.heapStatsInterval) clearInterval(resources.heapStatsInterval);
+      resources.heapStatsInterval = setInterval(() => {
        try {
          const heapStats = v8.getHeapStatistics();
          registry.set(METRIC.PROCESS_MEMORY_HEAP_SIZE_USED, heapStats.used_heap_size);
@@ -525,15 +549,14 @@ function startAlternativeHeapMonitoring(registry: MetricRegistry) {
        } catch (err) {
          registry.logger.warn('Failed to collect heap statistics:', err);
        }
-     }, 5000); // 每5秒更新一次
+      }, 5000); // 每5秒更新一次
+      resources.heapStatsInterval.unref();
  
      registry.logger.info('Alternative heap monitoring started (Node.js v22+ compatible)');
    } catch (error) {
      registry.logger.warn('Failed to start alternative heap monitoring:', error);
    }
  }
-
-let eventLoopMonitor: any = null;
 
 function startEventLoopStats(registry: MetricRegistry) {
   try {
@@ -562,8 +585,9 @@ function startEventLoopStats(registry: MetricRegistry) {
     });
 
     // 初始化事件循环监控器
-    eventLoopMonitor = monitorEventLoopDelay({ resolution: 20 });
-    eventLoopMonitor.enable();
+    const resources = getCommonMetricsResources(registry);
+    resources.eventLoopMonitor = monitorEventLoopDelay({ resolution: 20 });
+    resources.eventLoopMonitor.enable();
   } catch (error) {
     // silent
   }
@@ -680,6 +704,7 @@ function updateCommonMetrics(registry: MetricRegistry) {
   registry.set(METRIC.OS_CPU_LOAD_5, load[1]);
   registry.set(METRIC.OS_CPU_LOAD_15, load[2]);
 
+  const eventLoopMonitor = getCommonMetricsResources(registry).eventLoopMonitor;
   if (eventLoopMonitor) {
     try {
       registry.set(METRIC.PROCESS_EVENTLOOP_LAG_MIN, eventLoopMonitor.min / 1000000); // 转换为毫秒
@@ -730,4 +755,16 @@ function updateCommonMetrics(registry: MetricRegistry) {
   });
 }
 
-export { registerCommonMetrics, updateCommonMetrics };
+function stopCommonMetrics(registry: MetricRegistry): void {
+  const resources = commonMetricsResources.get(registry);
+  if (!resources) return;
+  resources.gcObserver?.disconnect();
+  resources.gcObserver = null;
+  if (resources.heapStatsInterval) clearInterval(resources.heapStatsInterval);
+  resources.heapStatsInterval = null;
+  resources.eventLoopMonitor?.disable();
+  resources.eventLoopMonitor = null;
+  commonMetricsResources.delete(registry);
+}
+
+export { registerCommonMetrics, stopCommonMetrics, updateCommonMetrics };

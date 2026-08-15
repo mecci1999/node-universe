@@ -73,6 +73,11 @@ export default class NodeCatalog {
    * 删除节点
    */
   public delete(id: string) {
+    const node = this.get(id);
+    if (node && !node.local) {
+      this.registry.unregisterServicesByNode(id);
+      this.star.transit?.removePendingRequestByNodeID(id);
+    }
     return this.nodes.delete(id);
   }
 

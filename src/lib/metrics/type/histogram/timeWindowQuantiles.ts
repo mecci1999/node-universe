@@ -18,6 +18,7 @@ export default class TimeWindowQuantiles {
   public dirty: boolean; // 是否需要更新数据
   public currentBucket: number; // 当前使用的桶的索引，初始化为-1表示还未开始轮转
   public lastSnapshot: any; // 缓存上一次计算的快照
+  public rotateTimer: NodeJS.Timeout | null = null;
 
   constructor(metric: BaseMetric, quantiles: any, maxAgeSeconds: number, ageBuckets: number) {
     this.metric = metric;
@@ -60,7 +61,8 @@ export default class TimeWindowQuantiles {
     this.ringBuckets[this.currentBucket].clear();
     this.setDirty();
     // 定期执行轮转操作，将当前桶索引递增并清空对应桶的数据，用于定期清理数据
-    setTimeout(() => this.rotate(), (this.maxAgeSeconds / this.ageBuckets) * 1000).unref();
+    this.rotateTimer = setTimeout(() => this.rotate(), (this.maxAgeSeconds / this.ageBuckets) * 1000);
+    this.rotateTimer.unref();
   }
 
   /**
@@ -69,6 +71,13 @@ export default class TimeWindowQuantiles {
   public add(value: number) {
     this.setDirty();
     this.ringBuckets[this.currentBucket].add(value);
+  }
+
+  public dispose() {
+    if (this.rotateTimer) {
+      clearTimeout(this.rotateTimer);
+      this.rotateTimer = null;
+    }
   }
 
   /**

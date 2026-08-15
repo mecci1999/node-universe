@@ -10,6 +10,19 @@ export default class KafkaTransporter extends BaseTransporter {
   public producer: Producer | null;
   public consumer: Consumer | null;
   public admin: Admin | null;
+  private subscribedTopics: GenericObject[] = [];
+  private consumerRecoveryPromise: Promise<void> | null = null;
+  private consumerRecoveryTimer: NodeJS.Timeout | null = null;
+  private resolveConsumerRecoveryDelay: ((shouldRecover: boolean) => void) | null = null;
+  private consumerRecoveryAttempts = 0;
+  private consumerRecoveryId = 0;
+  private consumerRecoveryGeneration = 0;
+  private consumerStopping = false;
+  private consumerLastHeartbeatAt = 0;
+  private consumerHealthTimer: NodeJS.Timeout | null = null;
+  private consumerKafkaJsRestartGeneration: number | null = null;
+  private consumerKafkaJsRestartTimer: NodeJS.Timeout | null = null;
+  private retiredConsumers = new WeakSet<Consumer>();
 
   constructor(options: any) {
     if (typeof options === 'string') {
@@ -46,7 +59,12 @@ export default class KafkaTransporter extends BaseTransporter {
       consumer: {
         groupId: 'node-universe-group',
         sessionTimeout: 30000,
-        heartbeatInterval: 3000
+        heartbeatInterval: 3000,
+        recoveryBaseDelay: 1000,
+        recoveryMaxDelay: 30000,
+        healthCheckInterval: 30000,
+        heartbeatTimeout: 120000,
+        kafkaJsRestartTimeout: 30000
       },
       publish: {
         partition: 0
@@ -128,6 +146,11 @@ export default class KafkaTransporter extends BaseTransporter {
    * 断开连接
    */
   public async disconnect(): Promise<void> {
+    this.consumerStopping = true;
+    this.consumerRecoveryGeneration += 1;
+    this.cancelConsumerRecovery();
+    this.stopConsumerHealthCheck();
+    this.stopKafkaJsRestartWatchdog();
     try {
       if (this.producer) {
         await this.producer.disconnect();
@@ -135,8 +158,9 @@ export default class KafkaTransporter extends BaseTransporter {
       }
 
       if (this.consumer) {
-        await this.consumer.disconnect();
+        const consumer = this.consumer;
         this.consumer = null;
+        await this.disconnectConsumer(consumer);
       }
 
       if (this.admin) {
@@ -145,6 +169,7 @@ export default class KafkaTransporter extends BaseTransporter {
       }
 
       this.client = null;
+      this.connected = false;
     } catch (error: any) {
       this.logger?.error('Kafka disconnect error', error.message);
     }
@@ -154,88 +179,16 @@ export default class KafkaTransporter extends BaseTransporter {
    * 订阅动作 - 使用通配符模式动态发现并订阅所有匹配的topics
    */
   public async makeSubscriptions(topics: GenericObject[]): Promise<void> {
-    // 生成当前实例的topics
-    const currentTopicsMap = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
-
-    // 生成需要监听的cmd模式
-    const cmdPatterns = topics.map(({ cmd }) => cmd);
-    // 去重
-    const uniqueCmds = [...new Set(cmdPatterns)];
+    this.subscribedTopics = topics.map((topic) => ({ ...topic }));
+    this.consumerStopping = false;
 
     try {
       // 使用管理员客户端尽力创建当前实例的 topics；本地开发环境下 Kafka metadata 偶发超时不应阻塞消费者订阅
       if (this.admin) {
-        this.admin
-          .createTopics({
-            topics: currentTopicsMap.map((topic) => ({
-              topic,
-              numPartitions: 1,
-              replicationFactor: 1
-            }))
-          })
-          .catch((error) => {
-            this.logger?.warn('Kafka topic creation skipped or delayed', error?.message || error);
-          });
-      }
+          void this.ensureTopics(this.subscribedTopics);
+        }
 
-      // 创建消费者实例
-      if (this.client) {
-        // 关键修复：确保groupId唯一。
-        // 原始代码中 Object.assign 的顺序导致 this.options.consumer 中的默认 groupId ('node-universe-group')
-        // 覆盖了 this.star.instanceID。这导致所有微服务节点加入同一个消费组。
-        // 由于 Kafka 的消费组负载均衡机制，如果有多个消费者但 Topic 只有一个分区，
-        // 只有其中一个消费者能收到消息（例如 INFO 广播包）。
-        // 这解释了为什么 gateway 经常收不到 auth 的注册信息。
-        const consumerOptions = Object.assign({}, this.options.consumer, {
-          groupId: this.star?.instanceID || this.options.consumer.groupId || 'node-universe-group'
-        });
-
-        this.logger?.info(`Kafka Consumer starting with Group ID: ${consumerOptions.groupId}`);
-
-        this.consumer = this.client.consumer(consumerOptions);
-
-        // 连接消费者
-        await this.consumer.connect();
-
-        await Promise.all(
-          currentTopicsMap.map((topic) => this.consumer?.subscribe({ topic, fromBeginning: false }))
-        );
-
-        // 开始消费消息
-        await this.consumer.run({
-          eachMessage: async ({ topic, partition, message }) => {
-            try {
-              // 解析topic获取cmd
-              // 更加健壮的解析方式：去除前缀后解析
-              if (topic.startsWith(this.prefix + '.')) {
-                const withoutPrefix = topic.slice(this.prefix.length + 1);
-                // 使用更可靠的分割方式，避免节点ID中包含点号导致解析错误
-                // 假设 cmd 总是第一部分
-                const firstDotIndex = withoutPrefix.indexOf('.');
-                let cmd: PacketTypes;
-                let suffix: string | undefined;
-
-                if (firstDotIndex === -1) {
-                  cmd = withoutPrefix as PacketTypes;
-                } else {
-                  cmd = withoutPrefix.substring(0, firstDotIndex) as PacketTypes;
-                  suffix = withoutPrefix.substring(firstDotIndex + 1);
-                }
-
-                if (message.value && uniqueCmds.includes(cmd)) {
-                  this.receive(cmd, message.value as Buffer);
-                }
-              }
-            } catch (error: any) {
-              this.logger?.error('Error processing message', error);
-            }
-          }
-        });
-
-        this.logger?.info(
-          `KAFKA Consumer connected and subscribed to topics: ${currentTopicsMap.join(', ')} with GroupID: ${consumerOptions.groupId}`
-        );
-      }
+      await this.createConsumer(this.subscribedTopics, false);
     } catch (error: any) {
       this.logger?.error('Unable to create topics or setup consumer!', topics, error);
       // 广播错误
@@ -248,10 +201,308 @@ export default class KafkaTransporter extends BaseTransporter {
     }
   }
 
+  private async ensureTopics(topics: GenericObject[]): Promise<void> {
+    if (!this.admin) return;
+    const currentTopicsMap = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
+    try {
+      await this.admin.createTopics({
+        topics: currentTopicsMap.map((topic) => ({
+          topic,
+          numPartitions: 1,
+          replicationFactor: 1
+        }))
+      });
+    } catch (error: any) {
+      this.logger?.warn('Kafka topic creation skipped or delayed', error?.message || error);
+    }
+  }
+
+  private getConsumerGroupId(): string {
+    return this.star?.instanceID || this.options.consumer.groupId || 'node-universe-group';
+  }
+
+  private isCurrentConsumer(consumer: Consumer, generation: number): boolean {
+    return !this.consumerStopping && this.consumer === consumer && this.consumerRecoveryGeneration === generation;
+  }
+
+  private isCurrentGeneration(generation: number): boolean {
+    return !this.consumerStopping && this.consumerRecoveryGeneration === generation;
+  }
+
+  private lifecyclePayload(reason: string, generation: number, details: GenericObject = {}): GenericObject {
+    return {
+      transporter: 'kafka',
+      instanceID: this.star?.instanceID || null,
+      groupId: this.getConsumerGroupId(),
+      generation,
+      reason,
+      ...details
+    };
+  }
+
+  private emitConsumerLifecycle(event: string, reason: string, generation: number, details: GenericObject = {}): void {
+    this.star?.broadcastLocal(event, this.lifecyclePayload(reason, generation, details));
+  }
+
+  private errorSummary(error: unknown): GenericObject {
+    if (error instanceof Error) return { name: error.name, message: error.message };
+    return { name: 'Error', message: String(error) };
+  }
+
+  private async disconnectConsumer(consumer: Consumer): Promise<void> {
+    if (this.retiredConsumers.has(consumer)) return;
+    this.retiredConsumers.add(consumer);
+    try {
+      await consumer.disconnect();
+    } catch (error: any) {
+      this.logger?.warn('Kafka consumer cleanup failed', error?.message || error);
+    }
+  }
+
+  private async createConsumer(topics: GenericObject[], wasRecovery: boolean): Promise<void> {
+    if (!this.client) throw new Error('Kafka client is unavailable for consumer subscription');
+    const currentTopicsMap = topics.map(({ cmd, nodeID }) => this.getTopicName(cmd, nodeID));
+    const uniqueCmds = [...new Set(topics.map(({ cmd }) => cmd))];
+    const consumerOptions = Object.assign({}, this.options.consumer, {
+      groupId: this.getConsumerGroupId()
+    });
+    const generation = ++this.consumerRecoveryGeneration;
+    const consumer = this.client.consumer(consumerOptions);
+
+    this.logger?.info(`Kafka Consumer starting with Group ID: ${consumerOptions.groupId}`);
+    const supportsHeartbeatInstrumentation = this.attachConsumerLifecycle(consumer, generation);
+    this.consumer = consumer;
+    try {
+      await consumer.connect();
+      if (!this.isCurrentConsumer(consumer, generation)) return;
+      await Promise.all(currentTopicsMap.map((topic) => consumer.subscribe({ topic, fromBeginning: false })));
+      if (!this.isCurrentConsumer(consumer, generation)) return;
+      await consumer.run({
+        eachMessage: async ({ topic: messageTopic, message }) => {
+          try {
+            if (!this.isCurrentConsumer(consumer, generation) || !messageTopic.startsWith(this.prefix + '.')) return;
+            const withoutPrefix = messageTopic.slice(this.prefix.length + 1);
+            const firstDotIndex = withoutPrefix.indexOf('.');
+            const cmd = (firstDotIndex === -1 ? withoutPrefix : withoutPrefix.substring(0, firstDotIndex)) as PacketTypes;
+            if (message.value && uniqueCmds.includes(cmd)) this.receive(cmd, message.value as Buffer);
+          } catch (error: any) {
+            this.logger?.error('Error processing message', error);
+          }
+        }
+      });
+      if (!this.isCurrentConsumer(consumer, generation)) return;
+      this.consumerLastHeartbeatAt = Date.now();
+      if (supportsHeartbeatInstrumentation) this.startConsumerHealthCheck(generation, consumerOptions.groupId, consumer);
+      this.consumerRecoveryAttempts = 0;
+      this.logger?.info(
+        `KAFKA Consumer connected and subscribed to topics: ${currentTopicsMap.join(', ')} with GroupID: ${consumerOptions.groupId}`
+      );
+      if (wasRecovery && this.isCurrentConsumer(consumer, generation)) await this.onConnected(true);
+    } catch (error) {
+      if (this.consumer === consumer && this.consumerRecoveryGeneration === generation) {
+        this.consumer = null;
+        this.consumerRecoveryGeneration += 1;
+        this.stopConsumerHealthCheck();
+        this.stopKafkaJsRestartWatchdog();
+      }
+      throw error;
+    } finally {
+      if (!this.isCurrentConsumer(consumer, generation)) await this.disconnectConsumer(consumer);
+    }
+  }
+
+  private attachConsumerLifecycle(consumer: Consumer, generation: number): boolean {
+    const events = (consumer as Consumer & { events?: Record<string, string> }).events;
+    if (!events || typeof consumer.on !== 'function') return false;
+    const heartbeatEvent = events.HEARTBEAT;
+    if (heartbeatEvent) {
+      consumer.on(heartbeatEvent, () => {
+        if (this.isCurrentConsumer(consumer, generation)) {
+          this.consumerLastHeartbeatAt = Date.now();
+          this.consumerKafkaJsRestartGeneration = null;
+          this.stopKafkaJsRestartWatchdog();
+        }
+      });
+    }
+    consumer.on(events.CRASH, (event: { payload?: { restart?: unknown } }) => {
+      if (!this.isCurrentConsumer(consumer, generation)) return;
+      if (event.payload?.restart === true) {
+        this.cancelConsumerRecovery();
+        this.consumerKafkaJsRestartGeneration = generation;
+        this.logger?.warn('Kafka consumer crashed; KafkaJS scheduled its own restart');
+        this.emitConsumerLifecycle('$transporter.consumer.kafkaJsRestart.started', 'crash', generation, { ownership: 'kafkajs' });
+        this.startKafkaJsRestartWatchdog(consumer, generation);
+        return;
+      }
+      this.consumerKafkaJsRestartGeneration = null;
+      this.stopKafkaJsRestartWatchdog();
+      void this.scheduleConsumerRecovery('crash', generation);
+    });
+    consumer.on(events.DISCONNECT, () => {
+      if (!this.isCurrentConsumer(consumer, generation)) return;
+      if (this.consumerKafkaJsRestartGeneration === generation) return;
+      this.stopKafkaJsRestartWatchdog();
+      void this.scheduleConsumerRecovery('disconnect', generation);
+    });
+    return Boolean(heartbeatEvent);
+  }
+
+  private startConsumerHealthCheck(generation: number, groupId: string, consumer: Consumer): void {
+    this.stopConsumerHealthCheck();
+    const interval = Number(this.options.consumer.healthCheckInterval) || 30000;
+    const heartbeatTimeout = Number(this.options.consumer.heartbeatTimeout) || 120000;
+    this.consumerHealthTimer = setInterval(() => {
+      if (
+        this.consumerStopping ||
+        !this.isCurrentConsumer(consumer, generation) ||
+        this.consumerKafkaJsRestartGeneration === generation ||
+        Date.now() - this.consumerLastHeartbeatAt <= heartbeatTimeout
+      ) {
+        return;
+      }
+
+      this.logger?.warn('Kafka consumer heartbeat stalled; scheduling recovery', {
+        generation,
+        groupId,
+        instanceID: this.star?.instanceID,
+        heartbeatTimeout,
+        lastHeartbeatAge: Date.now() - this.consumerLastHeartbeatAt
+      });
+      void this.scheduleConsumerRecovery('heartbeat_stalled', generation);
+    }, interval);
+    this.consumerHealthTimer.unref();
+  }
+
+  private stopConsumerHealthCheck(): void {
+    if (this.consumerHealthTimer) {
+      clearInterval(this.consumerHealthTimer);
+      this.consumerHealthTimer = null;
+    }
+  }
+
+  private startKafkaJsRestartWatchdog(consumer: Consumer, generation: number): void {
+    this.stopKafkaJsRestartWatchdog();
+    const delay = Number(this.options.consumer.kafkaJsRestartTimeout) || 30000;
+    this.consumerKafkaJsRestartTimer = setTimeout(() => {
+      this.consumerKafkaJsRestartTimer = null;
+      if (!this.isCurrentConsumer(consumer, generation) || this.consumerKafkaJsRestartGeneration !== generation) return;
+      this.consumerKafkaJsRestartGeneration = null;
+      this.emitConsumerLifecycle('$transporter.consumer.kafkaJsRestart.timedOut', 'kafka_js_restart_timeout', generation, {
+        delay,
+        ownership: 'manual'
+      });
+      void this.scheduleConsumerRecovery('kafka_js_restart_timeout', generation);
+    }, delay);
+    this.consumerKafkaJsRestartTimer.unref();
+  }
+
+  private stopKafkaJsRestartWatchdog(): void {
+    if (this.consumerKafkaJsRestartTimer) {
+      clearTimeout(this.consumerKafkaJsRestartTimer);
+      this.consumerKafkaJsRestartTimer = null;
+    }
+  }
+
+  private scheduleConsumerRecovery(reason: string, generation: number): Promise<void> {
+    if (!this.isCurrentGeneration(generation)) return Promise.resolve();
+    if (this.consumerRecoveryPromise) return this.consumerRecoveryPromise;
+    this.consumerRecoveryAttempts += 1;
+    const recoveryId = `${generation}-${++this.consumerRecoveryId}`;
+    const baseDelay = Number(this.options.consumer.recoveryBaseDelay) || 1000;
+    const maxDelay = Number(this.options.consumer.recoveryMaxDelay) || 30000;
+    const delay = Math.min(maxDelay, baseDelay * 2 ** (this.consumerRecoveryAttempts - 1));
+    this.logger?.warn('Kafka consumer recovery scheduled', { reason, attempt: this.consumerRecoveryAttempts, delay });
+    this.emitConsumerLifecycle('$transporter.consumer.recovery.scheduled', reason, generation, {
+      attempt: this.consumerRecoveryAttempts,
+      recoveryId,
+      delay,
+      ownership: 'manual'
+    });
+    let shouldRetry = false;
+    const attempt = this.consumerRecoveryAttempts;
+    this.consumerRecoveryPromise = new Promise<boolean>((resolve) => {
+      this.resolveConsumerRecoveryDelay = resolve;
+      this.consumerRecoveryTimer = setTimeout(() => {
+        this.consumerRecoveryTimer = null;
+        this.resolveConsumerRecoveryDelay = null;
+        resolve(true);
+      }, delay);
+      this.consumerRecoveryTimer.unref();
+    })
+      .then((shouldRecover) => {
+        if (!shouldRecover || !this.isCurrentGeneration(generation)) return;
+        this.emitConsumerLifecycle('$transporter.consumer.recovery.started', reason, generation, {
+          attempt,
+          recoveryId,
+          ownership: 'manual'
+        });
+        return this.recoverConsumer(generation).then(
+          () => {
+            this.emitConsumerLifecycle('$transporter.consumer.recovery.succeeded', reason, generation, {
+              attempt,
+              recoveryId,
+              consumerGeneration: this.consumerRecoveryGeneration,
+              ownership: 'manual'
+            });
+          },
+          (error: unknown) => {
+            shouldRetry = this.isCurrentGeneration(this.consumerRecoveryGeneration);
+            this.logger?.warn('Kafka consumer recovery failed', { reason, attempt: this.consumerRecoveryAttempts, error: this.errorSummary(error) });
+            this.emitConsumerLifecycle('$transporter.consumer.recovery.failed', reason, generation, {
+              attempt: this.consumerRecoveryAttempts,
+              recoveryId,
+              consumerGeneration: this.consumerRecoveryGeneration,
+              ownership: 'manual',
+              error: this.errorSummary(error)
+            });
+          }
+        );
+      })
+      .finally(() => {
+        this.consumerRecoveryPromise = null;
+        this.resolveConsumerRecoveryDelay = null;
+        if (shouldRetry) void this.scheduleConsumerRecovery(reason, this.consumerRecoveryGeneration);
+      });
+    return this.consumerRecoveryPromise;
+  }
+
+  private async recoverConsumer(generation: number): Promise<void> {
+    if (!this.isCurrentGeneration(generation)) return;
+    const previousConsumer = this.consumer;
+    this.consumer = null;
+    this.consumerRecoveryGeneration += 1;
+    const recoveryGeneration = this.consumerRecoveryGeneration;
+    this.stopConsumerHealthCheck();
+    this.consumerKafkaJsRestartGeneration = null;
+    this.stopKafkaJsRestartWatchdog();
+    if (previousConsumer) {
+      await this.disconnectConsumer(previousConsumer);
+      if (!this.isCurrentGeneration(recoveryGeneration)) return;
+    }
+    await this.createConsumer(this.subscribedTopics, true);
+    if (!this.isCurrentGeneration(this.consumerRecoveryGeneration) || !this.consumer) {
+      throw new Error('Kafka consumer recovery lost ownership during setup');
+    }
+    this.logger?.info('Kafka consumer recovery completed');
+  }
+
+  private cancelConsumerRecovery(): void {
+    if (this.consumerRecoveryTimer) {
+      clearTimeout(this.consumerRecoveryTimer);
+      this.consumerRecoveryTimer = null;
+    }
+    if (this.resolveConsumerRecoveryDelay) {
+      const resolve = this.resolveConsumerRecoveryDelay;
+      this.resolveConsumerRecoveryDelay = null;
+      resolve(false);
+    }
+  }
+
   /**
    * 发送动作
    */
   public async send(topic: string, data: Buffer, { packet }): Promise<void> {
+    void topic;
     if (!this.producer) return Promise.resolve();
 
     try {

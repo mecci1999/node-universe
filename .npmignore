@@ -6,6 +6,7 @@ yarn.lock
 .eslintrc.js
 .vscode
 examples/
+test/
 .gitignore
 .prettierrc
 nodemon.json

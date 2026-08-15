@@ -25,6 +25,10 @@ export default class RedisDiscoverer extends BaseDiscoverer {
   private INFO_KEY: string = '';
   private reconnecting: boolean = false; // 是否重新连接
   private serializer: Serialize | undefined;
+  private monitorClient: Redis | Cluster | null = null;
+  private onClientConnect: (() => void) | null = null;
+  private onClientError: ((error: Error) => void) | null = null;
+  private onMonitorEvent: ((time: string, args: string[]) => void) | null = null;
 
   constructor(options: DiscovererOptions) {
     if (typeof options === 'string') options = { redis: options };
@@ -72,7 +76,7 @@ export default class RedisDiscoverer extends BaseDiscoverer {
       this.client = new Redis(this.options.redis);
     }
 
-    this.client.on('connect', () => {
+    this.onClientConnect = () => {
       // 日志
       this.logger?.info('Redis Discoverer client connected.');
       if (this.reconnecting) {
@@ -80,9 +84,10 @@ export default class RedisDiscoverer extends BaseDiscoverer {
         // 重新发送本地节点信息
         this.sendLocalNodeInfo();
       }
-    });
+    };
+    this.client.on('connect', this.onClientConnect);
 
-    this.client.on('error', (error) => {
+    this.onClientError = (error) => {
       this.logger?.error(error);
       // 广播
       this.star?.broadcastLocal('$discoverer.error', {
@@ -90,14 +95,18 @@ export default class RedisDiscoverer extends BaseDiscoverer {
         module: 'discoverer',
         type: C.CLIENT_ERROR
       });
-    });
+    };
+    this.client.on('error', this.onClientError);
 
     if (this.options.monitor && isFunction((this.client as any).monitor)) {
       (this.client as any).monitor((error, monitor) => {
+        if (error || !monitor) return;
         this.logger?.debug('Redis Discoverer entering monitoring mode...');
-        monitor.on('monitor', (time, args) => {
+        this.monitorClient = monitor;
+        this.onMonitorEvent = (time, args) => {
           this.logger?.debug(args);
-        });
+        };
+        monitor.on('monitor', this.onMonitorEvent);
       });
     }
 
@@ -106,5 +115,18 @@ export default class RedisDiscoverer extends BaseDiscoverer {
     this.serializer?.init(this.star);
 
     this.logger?.debug('Redis Discoverer created. Prefix:', this.PREFIX);
+  }
+
+  public stop(): Promise<void> {
+    this.monitorClient?.disconnect();
+    this.monitorClient = null;
+    if (this.client && this.onClientConnect) this.client.off('connect', this.onClientConnect);
+    if (this.client && this.onClientError) this.client.off('error', this.onClientError);
+    this.client?.disconnect();
+    this.client = null;
+    this.onClientConnect = null;
+    this.onClientError = null;
+    this.onMonitorEvent = null;
+    return super.stop();
   }
 }

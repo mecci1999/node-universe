@@ -19,6 +19,8 @@ export default class BaseDiscoverer {
   public registry: Registry | null = null;
   public logger: LoggerInstance | null = null;
   public transit: Transit | null = null;
+  private onTransporterConnected: (() => void) | null = null;
+  private onTransporterDisconnected: (() => void) | null = null;
 
   constructor(options?: DiscovererOptions) {
     this.options = _.defaultsDeep({}, options, {
@@ -56,8 +58,10 @@ export default class BaseDiscoverer {
     }
 
     if (this.transit) {
-      this.star.localBus?.on('$transporter.connected', () => this.startHeartbeatTimers());
-      this.star.localBus?.on('$transporter.disconnected', () => this.stopHeartbeatTimers());
+      this.onTransporterConnected = () => this.startHeartbeatTimers();
+      this.onTransporterDisconnected = () => this.stopHeartbeatTimers();
+      this.star.localBus?.on('$transporter.connected', this.onTransporterConnected);
+      this.star.localBus?.on('$transporter.disconnected', this.onTransporterDisconnected);
     }
     this.localNode = this.registry.nodes.localNode;
 
@@ -114,6 +118,10 @@ export default class BaseDiscoverer {
    */
   public stop() {
     this.stopHeartbeatTimers();
+    if (this.onTransporterConnected) this.star?.localBus?.off('$transporter.connected', this.onTransporterConnected);
+    if (this.onTransporterDisconnected) this.star?.localBus?.off('$transporter.disconnected', this.onTransporterDisconnected);
+    this.onTransporterConnected = null;
+    this.onTransporterDisconnected = null;
 
     return Promise.resolve();
   }

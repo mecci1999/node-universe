@@ -111,6 +111,7 @@ export default class HistogramMetric extends BaseMetric {
    * 重置某个值
    */
   public resetItem(item: GenericObject, timestamp?: number) {
+    item.quantileValues?.dispose();
     item.timestamp = timestamp == null ? Date.now() : timestamp;
     item.sum = 0;
     item.count = 0;
@@ -190,6 +191,10 @@ export default class HistogramMetric extends BaseMetric {
     this.values.forEach((item) => this.resetItem(item, timestamp));
 
     this.changed(null);
+  }
+
+  public dispose(): void {
+    super.dispose();
   }
 
   /**

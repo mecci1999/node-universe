@@ -16,6 +16,8 @@ export default class RedisCacher extends BaseCacher {
   public redlockNonBlocking: Redlock | null;
   public client: any;
   public serializer: Serialize | null = null;
+  private monitorClient: Redis | Cluster | null = null;
+  private onMonitorEvent: ((time: string, args: string[]) => void) | null = null;
 
   constructor(options: RedisCacherOptions) {
     if (typeof options === 'string') options = { redis: options };
@@ -82,10 +84,13 @@ export default class RedisCacher extends BaseCacher {
 
     if ((this.options as RedisCacherOptions).monitor) {
       this.client.monitor((err, monitor) => {
+        if (err || !monitor) return;
         this.logger?.debug('Redis cacher entering monitoring mode...');
-        monitor.on('monitor', (time, args) => {
+        this.monitorClient = monitor;
+        this.onMonitorEvent = (time, args) => {
           this.logger?.debug(args);
-        });
+        };
+        monitor.on('monitor', this.onMonitorEvent);
       });
     }
 
@@ -126,8 +131,11 @@ export default class RedisCacher extends BaseCacher {
       this.pingIntervalHandle = null;
     }
 
+    this.monitorClient?.disconnect();
+    this.monitorClient = null;
+    this.onMonitorEvent = null;
     // 退出redis客户端
-    return this.client != null ? this.client.quit() : Promise.resolve();
+    return this.client != null ? this.client.quit().finally(() => (this.client = null)) : Promise.resolve();
   }
 
   /**

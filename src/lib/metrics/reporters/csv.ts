@@ -12,7 +12,7 @@ const MODE_LABEL = 'label';
 
 export default class CSVReporter extends BaseReporter {
   public lastChanges: Set<any>;
-  public timer: NodeJS.Timer | null = null;
+  public timer: NodeJS.Timeout | null = null;
   public folder: string = '';
 
   constructor(options: MetricReporterOptions) {
@@ -42,6 +42,14 @@ export default class CSVReporter extends BaseReporter {
 
     this.folder = path.resolve(this.options.folder);
     makeDirs(this.folder);
+  }
+
+  public stop(): Promise<void> {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    return Promise.resolve();
   }
 
   /**

@@ -32,6 +32,7 @@ import Transit from '../transit';
 import Transporters from '../transporters';
 import Validators from '../validators';
 import C from './constants';
+import { PROTOCOL_VERSION } from './protocol';
 import { getCpuUsage } from './cpu-usage';
 import H from './health';
 import getInternalSchema from './internals';
@@ -173,7 +174,7 @@ const INTERNAL_MIDDLEWARES = [
 
 export default class Star {
   public static UNIVERSE_VERSION: string = '0.0.1'; // 版本号
-  public static PROTOCOL_VERSION: string = '1'; // 协议版本
+  public static PROTOCOL_VERSION: string = PROTOCOL_VERSION; // 协议版本
   public static INTERNAL_MIDDLEWARES: string[] = INTERNAL_MIDDLEWARES;
 
   public options: StarOptions = {}; // 配置选项

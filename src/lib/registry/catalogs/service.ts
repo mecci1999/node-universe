@@ -153,8 +153,10 @@ export default class ServiceCatalog {
         this.registry.actions.removeByService(service);
         // 移除服务事件
         this.registry.events.removeByService(service);
-        return;
+        return true;
       }
+
+      return false;
     });
   }
 

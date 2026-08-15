@@ -10,7 +10,7 @@ import METRIC from '../constants';
 
 export default class ConsoleReporter extends BaseReporter {
   public lastChanges: Set<string>;
-  public timer: NodeJS.Timer | null = null;
+  public timer: NodeJS.Timeout | null = null;
 
   constructor(options: MetricsReporterOptions) {
     super(options);
@@ -32,8 +32,15 @@ export default class ConsoleReporter extends BaseReporter {
 
     if (this.options.interval > 0) {
       this.timer = setInterval(() => this.print(), this.options.interval * 1000);
+    }
+  }
+
+  public stop(): Promise<void> {
+    if (this.timer) {
+      clearInterval(this.timer);
       this.timer = null;
     }
+    return Promise.resolve();
   }
 
   /**

@@ -12,7 +12,7 @@ import { GenericObject } from '@/typings';
 import MetricBaseReporter from './reporters/base';
 import Reporters from './reporters/index';
 import Types from './type/index';
-import { registerCommonMetrics, updateCommonMetrics } from './common';
+import { registerCommonMetrics, stopCommonMetrics, updateCommonMetrics } from './common';
 
 const METRIC_NAME_REGEXP = /^[a-zA-Z_][a-zA-Z0-9_:.]*$/;
 const METRIC_LABEL_REGEXP = /^[a-zA-Z_][a-zA-Z0-9_.]*$/;
@@ -96,10 +96,15 @@ export default class MetricRegistry {
   public stop() {
     if (this.collectTimer) {
       clearInterval(this.collectTimer as NodeJS.Timeout);
+      this.collectTimer = null;
     }
+    stopCommonMetrics(this);
+    this.store.forEach((metric) => metric.dispose());
 
     if (this.reporter) {
-      return Promise.all(this.reporter.map((item) => item.stop()));
+      return Promise.all(this.reporter.map((item) => item.stop())).then(() => {
+        this.reporter = [];
+      });
     }
   }
 

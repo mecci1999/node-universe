@@ -7,7 +7,7 @@ import BaseMetric from '../type/base';
 
 export default class EventRepoter extends BaseReporter {
   public lastChanges: Set<any>;
-  public timer: NodeJS.Timer | null = null;
+  public timer: NodeJS.Timeout | null = null;
 
   constructor(options: MetricReporterOptions) {
     super(options);
@@ -33,6 +33,14 @@ export default class EventRepoter extends BaseReporter {
       this.timer = setInterval(() => this.sendEvent(), this.options.interval * 1000);
       this.timer.unref();
     }
+  }
+
+  public stop(): Promise<void> {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    return Promise.resolve();
   }
 
   /**

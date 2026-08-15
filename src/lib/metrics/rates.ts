@@ -11,7 +11,7 @@ export default class MetricRate {
   public rate: number;
   public lastValue: number;
   public lastTickTime: number;
-  public timer: NodeJS.Timer;
+  public timer: NodeJS.Timeout | null;
   public value: any;
 
   constructor(metric: BaseMetric, item: GenericObject, min: number) {
@@ -22,7 +22,8 @@ export default class MetricRate {
     this.lastValue = 0;
     this.lastTickTime = Date.now();
     this.value = null;
-    this.timer = setInterval(() => this.tick(), INTERVAL * 1000).unref();
+    this.timer = setInterval(() => this.tick(), INTERVAL * 1000);
+    this.timer.unref();
   }
 
   public update(value: any) {
@@ -63,5 +64,12 @@ export default class MetricRate {
     this.lastValue = 0;
     this.value = null;
     this.rate = 0;
+  }
+
+  public dispose() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
   }
 }

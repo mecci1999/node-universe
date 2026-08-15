@@ -34,6 +34,8 @@ export default class Transit {
   private maxPendingRequests: number;
   private maxStreamPoolSize: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectGeneration = 0;
 
   public connected: boolean;
   public disconnecting: boolean;
@@ -224,11 +226,14 @@ export default class Transit {
    */
   public connect(): Promise<void> {
     this.logger.info('Connecting to the transporter...');
+    this.disconnecting = false;
+    const generation = ++this.reconnectGeneration;
 
     return new Promise((resolve) => {
       this.__connectResolve = resolve;
 
       const doConnect = () => {
+        if (this.disconnecting || generation !== this.reconnectGeneration) return;
         let reconnectStarted = false;
 
         /* istanbul ignore next */
@@ -246,7 +251,9 @@ export default class Transit {
 
           reconnectStarted = true;
 
-          setTimeout(() => {
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            if (this.disconnecting || generation !== this.reconnectGeneration) return;
             this.logger.info('Reconnecting...');
             doConnect();
           }, 5 * 1000);
@@ -270,6 +277,8 @@ export default class Transit {
     this.connected = false;
     this.isReady = false;
     this.disconnecting = true;
+    this.reconnectGeneration += 1;
+    this.cancelReconnect();
     this.metrics?.set(METRIC.UNIVERSE_TRANSIT_CONNECTED, 0);
 
     this.star.broadcastLocal('$transporter.disconnected', { graceFul: true });
@@ -284,6 +293,13 @@ export default class Transit {
         this.stopCleanupTimer();
         this.disconnecting = false;
       });
+  }
+
+  private cancelReconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   /**
@@ -839,9 +855,7 @@ export default class Transit {
     this.logger.debug(`Remove pending requests of '${nodeID}' node.`);
     this.pendingRequests.forEach((req, id) => {
       if (req.nodeID === nodeID) {
-        this.pendingRequests.delete(id);
-        this.pendingReqStreams.delete(id);
-        this.pendingResStreams.delete(id);
+        this.removePendingRequest(id, true);
         req.reject(new RequestRejectedError({ action: req.action?.name || req.action, nodeID: req.nodeID }));
       }
     });
@@ -1119,6 +1133,7 @@ export default class Transit {
         pass.end();
 
         // 从请求队列中清除
+        this.disposePendingStream(this.pendingReqStreams.get(payload.id));
         this.pendingReqStreams.delete(payload.id);
 
         return null;
@@ -1153,7 +1168,7 @@ export default class Transit {
    * 处理接收的响应中的流
    */
   private _handleIncomingResponseStream(packet: GenericObject, req: TransitRequest) {
-    let pass = this.pendingReqStreams.get(packet.id);
+    let pass = this.pendingResStreams.get(packet.id);
 
     if (!pass) {
       this.logger.debug(`<= New stream is received from '${packet.sender}'. Seq: ${packet.seq}`);
@@ -1261,10 +1276,22 @@ export default class Transit {
   /**
    * 移除等待处理的请求
    */
-  public removePendingRequest(id: any) {
+  public removePendingRequest(id: any, destroyStreams = false) {
+    const requestStream = this.pendingReqStreams.get(id);
+    const responseStream = this.pendingResStreams.get(id);
+    this.disposePendingStream(requestStream, destroyStreams);
+    this.disposePendingStream(responseStream, destroyStreams);
     this.pendingRequests.delete(id);
     this.pendingReqStreams.delete(id);
     this.pendingResStreams.delete(id);
+  }
+
+  private disposePendingStream(stream: any, destroy = false): void {
+    if (!stream) return;
+    stream.$poolTimeout?.forEach((timer: NodeJS.Timeout) => clearTimeout(timer));
+    stream.$poolTimeout?.clear();
+    stream.$pool?.clear();
+    if (destroy && !stream.destroyed) stream.destroy();
   }
 
 
@@ -1335,8 +1362,18 @@ export default class Transit {
     for (const [id, req] of this.pendingRequests.entries()) {
       if ((req as any).timestamp && now - (req as any).timestamp > timeout) {
         this.logger.warn(`Cleaning up expired request: ${id}`);
-        this.removePendingRequest(id);
+        this.removePendingRequest(id, true);
         req.reject(new Error('Request timeout during cleanup'));
+      }
+    }
+
+    const pendingStreamIDs = new Set([...this.pendingReqStreams.keys(), ...this.pendingResStreams.keys()]);
+    for (const id of pendingStreamIDs) {
+      if (this.pendingRequests.has(id)) continue;
+      const stream = this.pendingReqStreams.get(id) || this.pendingResStreams.get(id);
+      if (typeof stream?.$createdAt === 'number' && now - stream.$createdAt > timeout) {
+        this.logger.warn(`Cleaning up abandoned incoming stream: ${id}`);
+        this.removePendingRequest(id, true);
       }
     }
     

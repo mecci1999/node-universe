@@ -1,10 +1,11 @@
 {
   "name": "node-universe",
-  "version": "1.6.8",
+  "version": "1.7.4",
   "description": "",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "scripts": {
+    "test": "node --test -r ts-node/register -r tsconfig-paths/register test/**/*.test.ts",
     "test:client": "yarn build && node examples/client.js",
     "build": "rm -rf ./dist && rollup -c rollup.config.js && rm -rf ./dist/src"
   },
