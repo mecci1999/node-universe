@@ -3,10 +3,10 @@ import test from 'node:test';
 import KafkaTransporter from '@/lib/transporters/kafka';
 import { PacketTypes } from '@/typings/packets';
 
-type ConsumerEvent = 'crash' | 'disconnect' | 'heartbeat';
+type ConsumerEvent = 'crash' | 'disconnect' | 'heartbeat' | 'group_join';
 
 class FakeConsumer {
-  public readonly events = { CRASH: 'crash', DISCONNECT: 'disconnect', HEARTBEAT: 'heartbeat' };
+  public readonly events = { CRASH: 'crash', DISCONNECT: 'disconnect', HEARTBEAT: 'heartbeat', GROUP_JOIN: 'group_join' };
   public connectCalls = 0;
   public disconnectCalls = 0;
   public runCalls = 0;
@@ -113,7 +113,7 @@ test('replaces a crashed consumer, restores subscriptions, and re-announces the 
 
 test('does not replace a consumer when KafkaJS owns the restart', async () => {
   const original = new FakeConsumer();
-  const { transporter, afterConnectCalls } = createTransporter([original]);
+  const { transporter, afterConnectCalls } = createTransporter([original], { kafkaJsRestartTimeout: 100 });
 
   await transporter.makeSubscriptions([{ cmd: PacketTypes.PACKET_INFO, nodeID: 'node-a' }]);
   original.emit('crash', { restart: true });
@@ -122,6 +122,35 @@ test('does not replace a consumer when KafkaJS owns the restart', async () => {
   assert.equal(original.disconnectCalls, 0);
   assert.equal(transporter.consumer, original);
   assert.deepEqual(afterConnectCalls, []);
+  await transporter.disconnect();
+});
+
+test('re-announces after a KafkaJS-owned restart only when the consumer rejoins its group', async () => {
+  const original = new FakeConsumer();
+  const { transporter, afterConnectCalls, lifecycleEvents } = createTransporter([original], { kafkaJsRestartTimeout: 100 });
+
+  await transporter.makeSubscriptions([{ cmd: PacketTypes.PACKET_INFO, nodeID: 'node-a' }]);
+  original.emit('crash', { restart: true });
+  original.emit('heartbeat');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(afterConnectCalls, []);
+  assert.equal(
+    lifecycleEvents.filter(({ event }) => event === '$transporter.consumer.recovery.succeeded').length,
+    0
+  );
+
+  original.emit('group_join');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  original.emit('group_join');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(afterConnectCalls, [true]);
+  const succeeded = lifecycleEvents.filter(({ event }) => event === '$transporter.consumer.recovery.succeeded');
+  assert.equal(succeeded.length, 1);
+  assert.equal(succeeded[0].payload.reason, 'kafka_js_restart');
+  assert.equal(succeeded[0].payload.ownership, 'kafkajs');
+  await transporter.disconnect();
 });
 
 test('cancels manual disconnect recovery when KafkaJS claims restart after disconnect', async () => {

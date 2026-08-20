@@ -150,15 +150,17 @@ export default class Transit {
    */
   public async afterConnect(wasReconnect: boolean) {
     try {
-      if (wasReconnect) {
-        await this.discoverer?.sendLocalNodeInfo();
-      } else {
+      if (!wasReconnect) {
         await this.makeSubscriptions();
       }
 
+      // sendNodeInfo intentionally ignores packets while Transit is marked
+      // disconnected. Set this before the reconnect announcement so a
+      // successful consumer rejoin cannot silently drop the authoritative
+      // service snapshot that repairs remote registries.
       this.connected = true;
       // 注册发现其他的节点
-      if (!wasReconnect) await this.discoverer?.sendLocalNodeInfo();
+      await this.discoverer?.sendLocalNodeInfo();
       await this.discoverer?.discoverAllNodes();
       setTimeout(() => this.discoverer?.discoverAllNodes(), 3000).unref();
       setTimeout(() => this.discoverer?.discoverAllNodes(), 10000).unref();

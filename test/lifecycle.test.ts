@@ -22,14 +22,30 @@ function createNodeCatalogForInfoTests() {
   const registrations: Array<{ nodeID: string; services: unknown[] }> = [];
   const unregistrations: string[] = [];
   const broadcasts: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  const registeredServices = new Map<string, Set<string>>();
+  const registeredActions = new Map<string, Set<string>>();
 
   catalog.nodes = new Map();
   catalog.registry = {
     registerServices(node: { id: string }, services: unknown[]) {
       registrations.push({ nodeID: node.id, services });
+      const serviceNames = new Set<string>();
+      const actionNames = new Set<string>();
+      for (const service of services as Array<{ name?: unknown; fullName?: unknown; actions?: Record<string, unknown> }>) {
+        const serviceName = String(service.fullName || service.name || '');
+        if (!serviceName) continue;
+        serviceNames.add(serviceName);
+        for (const actionName of Object.keys(service.actions || {})) {
+          actionNames.add(`${serviceName}.${actionName}`);
+        }
+      }
+      registeredServices.set(node.id, serviceNames);
+      registeredActions.set(node.id, actionNames);
     },
     unregisterServicesByNode(nodeID: string) {
       unregistrations.push(nodeID);
+      registeredServices.delete(nodeID);
+      registeredActions.delete(nodeID);
     }
   } as never;
   catalog.star = {
@@ -43,7 +59,7 @@ function createNodeCatalogForInfoTests() {
     warn() {}
   };
 
-  return { catalog, registrations, unregistrations, broadcasts };
+  return { catalog, registrations, unregistrations, broadcasts, registeredServices, registeredActions };
 }
 
 function createHeartbeatDiscoverer(node: Node) {
@@ -331,7 +347,7 @@ test('NodeCatalog rejects a delayed epoch-less shutdown INFO after a newer proce
   assert.equal(broadcasts.length, broadcastsBeforeShutdownInfo);
 });
 
-test('NodeCatalog leaves an out-of-order same-generation INFO snapshot untouched', () => {
+test('NodeCatalog preserves its snapshot for out-of-order INFO while reconciling the retained catalog', () => {
   const { catalog, registrations, broadcasts } = createNodeCatalogForInfoTests();
   const node = catalog.processNodeInfo(
     remoteNodeInfo({
@@ -357,8 +373,34 @@ test('NodeCatalog leaves an out-of-order same-generation INFO snapshot untouched
   assert.equal(node.seq, 10);
   assert.equal(node.rawInfo, currentRawInfo);
   assert.equal(node.services, currentServices);
-  assert.equal(registrations.length, 1);
+  assert.equal(registrations.length, 2);
+  assert.deepEqual(registrations[1], {
+    nodeID: 'metrics-production-metrics',
+    services: [{ name: 'current-catalog' }]
+  });
   assert.equal(broadcasts.length, broadcastsBeforeOutOfOrderInfo);
+});
+
+test('NodeCatalog reconciles a lost remote service and action catalog from duplicate INFO', () => {
+  const { catalog, registrations, broadcasts, registeredServices, registeredActions } = createNodeCatalogForInfoTests();
+  const info = remoteNodeInfo();
+  const node = catalog.processNodeInfo(info);
+  const originalRawInfo = node.rawInfo;
+  const broadcastsBeforeDuplicateInfo = broadcasts.length;
+
+  // Simulate a receiver-local catalog loss while the authoritative Node
+  // snapshot remains available. DISCOVER responses commonly resend this exact
+  // same INFO sequence.
+  registeredServices.delete(node.id);
+  registeredActions.delete(node.id);
+  catalog.processNodeInfo(info);
+
+  assert.equal(node.rawInfo, originalRawInfo);
+  assert.equal(node.seq, 1);
+  assert.equal(registrations.length, 2);
+  assert.deepEqual(registeredServices.get(node.id), new Set(['metrics']));
+  assert.deepEqual(registeredActions.get(node.id), new Set(['metrics.overview']));
+  assert.equal(broadcasts.length, broadcastsBeforeDuplicateInfo);
 });
 
 test('NodeCatalog only accepts a DISCONNECT packet from the active process generation', () => {
@@ -478,6 +520,47 @@ test('Transit includes the active process generation in HEARTBEAT and DISCONNECT
       }
     ]
   );
+});
+
+test('Transit marks itself connected before publishing INFO during a reconnect', async () => {
+  const transit = Object.create(Transit.prototype) as Transit;
+  const publishedPackets: Array<{ type: string; payload: Record<string, unknown> }> = [];
+  transit.connected = false;
+  transit.metrics = null;
+  transit.__connectResolve = null;
+  transit.star = {
+    instanceID: 'metrics-current',
+    instanceEpoch: instanceEpoch(2000, 1),
+    broadcastLocal() {}
+  } as never;
+  transit.logger = { error() {} } as never;
+  (transit as never as {
+    publish(packet: { type: string; payload: Record<string, unknown> }): Promise<void>;
+  }).publish = (packet) => {
+    publishedPackets.push(packet);
+    return Promise.resolve();
+  };
+  transit.discoverer = {
+    sendLocalNodeInfo: () =>
+      transit.sendNodeInfo(
+        {
+          services: [{ name: 'metrics', version: 1 }],
+          ipList: ['10.0.0.1'],
+          hostname: 'metrics',
+          client: { type: 'nodejs' },
+          config: {},
+          metadata: {},
+          seq: 1
+        },
+        ''
+      ),
+    discoverAllNodes: () => Promise.resolve()
+  } as never;
+
+  await transit.afterConnect(true);
+
+  assert.equal(transit.connected, true);
+  assert.equal(publishedPackets.filter((packet) => packet.type === 'INFO').length, 1);
 });
 
 test('ServiceCatalog removes remote services and their registered endpoints by node ID', () => {

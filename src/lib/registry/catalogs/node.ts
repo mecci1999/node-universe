@@ -130,8 +130,11 @@ export default class NodeCatalog {
 
     // 更新节点信息
     const needRegister = node.update(payload, isReconnected);
-    if (needRegister && node.services) {
-      // 注册节点以及节点的服务
+    if (node.services) {
+      // INFO is an authoritative snapshot. A local service/action catalog can
+      // be lost independently of its Node record, so a valid duplicate INFO
+      // must reconcile the retained snapshot even when node.update correctly
+      // reports no metadata change.
       this.registry.registerServices(node, node.services);
     }
 

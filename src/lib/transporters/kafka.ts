@@ -319,9 +319,23 @@ export default class KafkaTransporter extends BaseTransporter {
       consumer.on(heartbeatEvent, () => {
         if (this.isCurrentConsumer(consumer, generation)) {
           this.consumerLastHeartbeatAt = Date.now();
-          this.consumerKafkaJsRestartGeneration = null;
-          this.stopKafkaJsRestartWatchdog();
         }
+      });
+    }
+    const groupJoinEvent = events.GROUP_JOIN;
+    if (groupJoinEvent) {
+      consumer.on(groupJoinEvent, () => {
+        if (!this.isCurrentConsumer(consumer, generation)) return;
+        if (this.consumerKafkaJsRestartGeneration !== generation) return;
+
+        // KafkaJS can emit heartbeats while it is still rebuilding the consumer
+        // group. GROUP_JOIN is the first point at which this consumer can
+        // reliably receive the INFO/DISCOVER traffic required to repair peers'
+        // registries after a KafkaJS-owned restart.
+        this.consumerKafkaJsRestartGeneration = null;
+        this.consumerLastHeartbeatAt = Date.now();
+        this.stopKafkaJsRestartWatchdog();
+        void this.completeKafkaJsRestart(consumer, generation);
       });
     }
     consumer.on(events.CRASH, (event: { payload?: { restart?: unknown } }) => {
@@ -345,6 +359,35 @@ export default class KafkaTransporter extends BaseTransporter {
       void this.scheduleConsumerRecovery('disconnect', generation);
     });
     return Boolean(heartbeatEvent);
+  }
+
+  private async completeKafkaJsRestart(consumer: Consumer, generation: number): Promise<void> {
+    try {
+      await this.onConnected(true);
+      if (!this.isCurrentConsumer(consumer, generation)) return;
+
+      this.logger?.info('KafkaJS consumer restart completed after group join', {
+        generation,
+        groupId: this.getConsumerGroupId()
+      });
+      this.emitConsumerLifecycle('$transporter.consumer.recovery.succeeded', 'kafka_js_restart', generation, {
+        consumerGeneration: generation,
+        ownership: 'kafkajs'
+      });
+    } catch (error) {
+      if (!this.isCurrentConsumer(consumer, generation)) return;
+
+      this.logger?.warn('KafkaJS consumer restart completed but transporter reconciliation failed', {
+        generation,
+        error: this.errorSummary(error)
+      });
+      this.emitConsumerLifecycle('$transporter.consumer.recovery.failed', 'kafka_js_restart', generation, {
+        consumerGeneration: generation,
+        ownership: 'kafkajs',
+        error: this.errorSummary(error)
+      });
+      void this.scheduleConsumerRecovery('kafka_js_restart_reconciliation_failed', generation);
+    }
   }
 
   private startConsumerHealthCheck(generation: number, groupId: string, consumer: Consumer): void {
