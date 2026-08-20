@@ -33,6 +33,7 @@ export default class NodeCatalog {
       node.local = true;
       node.ipList = getIpList();
       node.instanceID = this.star.instanceID;
+      node.instanceEpoch = this.star.instanceEpoch;
       node.hostname = os.hostname();
       node.client = {
         type: 'nodejs',
@@ -114,6 +115,12 @@ export default class NodeCatalog {
       isNew = true;
       node = new Node(nodeID);
       this.add(nodeID, node);
+    } else if (node.isStaleInstanceInfo(payload)) {
+      this.logger.debug(`Ignoring stale INFO packet from '${nodeID}'.`, {
+        incomingInstanceEpoch: payload.instanceEpoch,
+        currentInstanceEpoch: node.instanceEpoch
+      });
+      return node;
     } else if (!node.available) {
       isReconnected = true;
       node.lastHeartbeatTime = Math.round(process.uptime());
@@ -127,6 +134,8 @@ export default class NodeCatalog {
       // 注册节点以及节点的服务
       this.registry.registerServices(node, node.services);
     }
+
+    if (!needRegister) return node;
 
     if (isNew) {
       // 广播
@@ -153,9 +162,19 @@ export default class NodeCatalog {
   /**
    * 节点断开连接
    */
-  public disconnected(nodeID: string, isUnexpected: boolean) {
+  public disconnected(nodeID: string, isUnexpected: boolean, payload?: GenericObject) {
     let node = this.get(nodeID);
     if (node && node.available) {
+      if (payload && node.hasInstanceEpoch() && !node.isCurrentInstanceSignal(payload)) {
+        this.logger.debug(`Ignoring non-current DISCONNECT packet from '${nodeID}'.`, {
+          incomingInstanceID: payload.instanceID,
+          incomingInstanceEpoch: payload.instanceEpoch,
+          currentInstanceID: node.instanceID,
+          currentInstanceEpoch: node.instanceEpoch
+        });
+        return;
+      }
+
       node.disconnected();
       // 取消注册该节点的服务
       this.registry.unregisterServicesByNode(node.id);

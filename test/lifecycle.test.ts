@@ -4,12 +4,82 @@ import MetricRate from '@/lib/metrics/rates';
 import TimeWindowQuantiles from '@/lib/metrics/type/histogram/timeWindowQuantiles';
 import Transit from '@/lib/transit';
 import NodeCatalog from '@/lib/registry/catalogs/node';
+import BaseDiscoverer from '@/lib/registry/discoverers/base';
+import Node from '@/lib/registry/node';
 import ActionCatalog from '@/lib/registry/catalogs/action';
 import EventCatalog from '@/lib/registry/catalogs/event';
 import ServiceCatalog from '@/lib/registry/catalogs/service';
 import { TransitRequest } from '@/typings/transit';
 
 type ExpiringTransitRequest = TransitRequest & { timestamp: number };
+
+function instanceEpoch(wallClock: number, monotonic: number): string {
+  return `${wallClock.toString().padStart(16, '0')}-${monotonic.toString().padStart(24, '0')}`;
+}
+
+function createNodeCatalogForInfoTests() {
+  const catalog = Object.create(NodeCatalog.prototype) as NodeCatalog;
+  const registrations: Array<{ nodeID: string; services: unknown[] }> = [];
+  const unregistrations: string[] = [];
+  const broadcasts: Array<{ event: string; payload: Record<string, unknown> }> = [];
+
+  catalog.nodes = new Map();
+  catalog.registry = {
+    registerServices(node: { id: string }, services: unknown[]) {
+      registrations.push({ nodeID: node.id, services });
+    },
+    unregisterServicesByNode(nodeID: string) {
+      unregistrations.push(nodeID);
+    }
+  } as never;
+  catalog.star = {
+    broadcastLocal(event: string, payload: Record<string, unknown>) {
+      broadcasts.push({ event, payload });
+    }
+  } as never;
+  (catalog as never as { logger: { info(): void; debug(): void; warn(): void } }).logger = {
+    info() {},
+    debug() {},
+    warn() {}
+  };
+
+  return { catalog, registrations, unregistrations, broadcasts };
+}
+
+function createHeartbeatDiscoverer(node: Node) {
+  const discoverer = Object.create(BaseDiscoverer.prototype) as BaseDiscoverer;
+  const discoveries: string[] = [];
+  discoverer.registry = {
+    nodes: {
+      get(nodeID: string) {
+        return nodeID === node.id ? node : undefined;
+      }
+    }
+  } as never;
+  discoverer.logger = { debug() {} } as never;
+  discoverer.discoverNode = ((nodeID?: string) => {
+    if (nodeID) discoveries.push(nodeID);
+    return Promise.resolve();
+  }) as never;
+
+  return { discoverer, discoveries };
+}
+
+function remoteNodeInfo(overrides: Record<string, unknown> = {}) {
+  return {
+    sender: 'metrics-production-metrics',
+    instanceID: 'instance-a',
+    seq: 1,
+    metadata: {},
+    ipList: ['10.0.0.1'],
+    hostname: 'metrics',
+    port: 3000,
+    client: { type: 'nodejs' },
+    config: {},
+    services: [{ name: 'metrics', version: 1, actions: { overview: {} } }],
+    ...overrides
+  };
+}
 
 test('MetricRate disposes its owned interval exactly once', () => {
   const rate = new MetricRate({ changed() {} } as never, { value: 0, labels: {} }, 1);
@@ -136,6 +206,278 @@ test('deleting an offline remote node cascades service and pending-request clean
   assert.deepEqual(removedNodes, ['remote-node']);
   assert.deepEqual(removedRequests, ['remote-node']);
   assert.equal(catalog.nodes.has('remote-node'), false);
+});
+
+test('NodeCatalog rejects delayed INFO from an older process generation before it mutates a reconnected node', () => {
+  const { catalog, registrations, broadcasts } = createNodeCatalogForInfoTests();
+  const currentInfo = remoteNodeInfo({
+    instanceID: 'metrics-new',
+    instanceEpoch: instanceEpoch(2000, 2),
+    seq: 1
+  });
+  const node = catalog.processNodeInfo(currentInfo);
+  const currentRawInfo = node.rawInfo;
+  const currentServices = node.services;
+
+  node.available = false;
+  node.offlineSince = 42;
+  const broadcastsBeforeStaleInfo = broadcasts.length;
+
+  const result = catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-old',
+      instanceEpoch: instanceEpoch(1000, 1),
+      seq: 999,
+      services: []
+    })
+  );
+
+  assert.equal(result, node);
+  assert.equal(node.instanceID, 'metrics-new');
+  assert.equal(node.instanceEpoch, instanceEpoch(2000, 2));
+  assert.equal(node.seq, 1);
+  assert.equal(node.available, false);
+  assert.equal(node.offlineSince, 42);
+  assert.equal(node.rawInfo, currentRawInfo);
+  assert.equal(node.services, currentServices);
+  assert.equal(registrations.length, 1);
+  assert.equal(broadcasts.length, broadcastsBeforeStaleInfo);
+});
+
+test('NodeCatalog accepts a newer process generation even when its INFO sequence restarts lower', () => {
+  const { catalog, registrations } = createNodeCatalogForInfoTests();
+
+  catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-old',
+      instanceEpoch: instanceEpoch(1000, 1),
+      seq: 100,
+      services: [{ name: 'old-catalog' }]
+    })
+  );
+  const node = catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-new',
+      instanceEpoch: instanceEpoch(2000, 1),
+      seq: 1,
+      services: [{ name: 'new-catalog' }]
+    })
+  );
+
+  assert.equal(node.instanceID, 'metrics-new');
+  assert.equal(node.instanceEpoch, instanceEpoch(2000, 1));
+  assert.equal(node.seq, 1);
+  assert.deepEqual(node.services, [{ name: 'new-catalog' }]);
+  assert.equal(registrations.length, 2);
+  assert.deepEqual(registrations[1], {
+    nodeID: 'metrics-production-metrics',
+    services: [{ name: 'new-catalog' }]
+  });
+});
+
+test('NodeCatalog keeps accepting legacy INFO without an instance epoch when its instance changes', () => {
+  const { catalog, registrations } = createNodeCatalogForInfoTests();
+
+  catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-legacy-old',
+      seq: 100,
+      services: [{ name: 'legacy-old-catalog' }]
+    })
+  );
+  const node = catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-legacy',
+      seq: 1,
+      services: [{ name: 'legacy-catalog' }]
+    })
+  );
+
+  assert.equal(node.instanceID, 'metrics-legacy');
+  assert.equal(node.instanceEpoch, null);
+  assert.equal(node.seq, 1);
+  assert.deepEqual(node.services, [{ name: 'legacy-catalog' }]);
+  assert.equal(registrations.length, 2);
+});
+
+test('NodeCatalog rejects a delayed epoch-less shutdown INFO after a newer process generation is known', () => {
+  const { catalog, registrations, broadcasts } = createNodeCatalogForInfoTests();
+  const node = catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-new',
+      instanceEpoch: instanceEpoch(2000, 1),
+      seq: 1,
+      services: [{ name: 'new-catalog' }]
+    })
+  );
+  const currentRawInfo = node.rawInfo;
+  const currentServices = node.services;
+  const broadcastsBeforeShutdownInfo = broadcasts.length;
+
+  catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-old',
+      seq: 101,
+      services: []
+    })
+  );
+
+  assert.equal(node.instanceID, 'metrics-new');
+  assert.equal(node.instanceEpoch, instanceEpoch(2000, 1));
+  assert.equal(node.seq, 1);
+  assert.equal(node.rawInfo, currentRawInfo);
+  assert.equal(node.services, currentServices);
+  assert.equal(registrations.length, 1);
+  assert.equal(broadcasts.length, broadcastsBeforeShutdownInfo);
+});
+
+test('NodeCatalog leaves an out-of-order same-generation INFO snapshot untouched', () => {
+  const { catalog, registrations, broadcasts } = createNodeCatalogForInfoTests();
+  const node = catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-current',
+      instanceEpoch: instanceEpoch(2000, 1),
+      seq: 10,
+      services: [{ name: 'current-catalog' }]
+    })
+  );
+  const currentRawInfo = node.rawInfo;
+  const currentServices = node.services;
+  const broadcastsBeforeOutOfOrderInfo = broadcasts.length;
+
+  catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-current',
+      instanceEpoch: instanceEpoch(2000, 1),
+      seq: 9,
+      services: []
+    })
+  );
+
+  assert.equal(node.seq, 10);
+  assert.equal(node.rawInfo, currentRawInfo);
+  assert.equal(node.services, currentServices);
+  assert.equal(registrations.length, 1);
+  assert.equal(broadcasts.length, broadcastsBeforeOutOfOrderInfo);
+});
+
+test('NodeCatalog only accepts a DISCONNECT packet from the active process generation', () => {
+  const { catalog, unregistrations, broadcasts } = createNodeCatalogForInfoTests();
+  const node = catalog.processNodeInfo(
+    remoteNodeInfo({
+      instanceID: 'metrics-current',
+      instanceEpoch: instanceEpoch(2000, 1),
+      seq: 1
+    })
+  );
+  const broadcastsBeforeDisconnect = broadcasts.length;
+
+  catalog.disconnected(node.id, false, {
+    instanceID: 'metrics-old',
+    instanceEpoch: instanceEpoch(1000, 1)
+  });
+  catalog.disconnected(node.id, false, { instanceID: 'metrics-legacy-old' });
+
+  assert.equal(node.available, true);
+  assert.deepEqual(unregistrations, []);
+  assert.equal(broadcasts.length, broadcastsBeforeDisconnect);
+
+  catalog.disconnected(node.id, false, {
+    instanceID: 'metrics-current',
+    instanceEpoch: instanceEpoch(2000, 1)
+  });
+
+  assert.equal(node.available, false);
+  assert.deepEqual(unregistrations, [node.id]);
+  assert.equal(broadcasts.at(-1)?.event, '$node.disconnected');
+});
+
+test('BaseDiscoverer applies the process-generation fence to HEARTBEAT packets', () => {
+  const node = new Node('metrics-production-metrics');
+  node.instanceID = 'metrics-current';
+  node.instanceEpoch = instanceEpoch(2000, 1);
+  node.seq = 5;
+  node.cpu = 10;
+  node.cpuSeq = 2;
+  node.lastHeartbeatTime = 17;
+  const { discoverer, discoveries } = createHeartbeatDiscoverer(node);
+
+  discoverer.heartbeatReceived(node.id, {
+    instanceID: 'metrics-old',
+    instanceEpoch: instanceEpoch(1000, 1),
+    cpu: 90,
+    cpuSeq: 9
+  });
+  discoverer.heartbeatReceived(node.id, {
+    instanceID: 'metrics-legacy-old',
+    cpu: 80,
+    cpuSeq: 8
+  });
+
+  assert.equal(node.cpu, 10);
+  assert.equal(node.cpuSeq, 2);
+  assert.equal(node.lastHeartbeatTime, 17);
+  assert.deepEqual(discoveries, []);
+
+  discoverer.heartbeatReceived(node.id, {
+    instanceID: 'metrics-next',
+    instanceEpoch: instanceEpoch(3000, 1),
+    cpu: 70,
+    cpuSeq: 7
+  });
+
+  assert.equal(node.cpu, 10);
+  assert.deepEqual(discoveries, [node.id]);
+
+  discoverer.heartbeatReceived(node.id, {
+    instanceID: 'metrics-current',
+    instanceEpoch: instanceEpoch(2000, 1),
+    cpu: 20,
+    cpuSeq: 3
+  });
+
+  assert.equal(node.cpu, 20);
+  assert.equal(node.cpuSeq, 3);
+  assert.equal(discoveries.length, 1);
+});
+
+test('Transit includes the active process generation in HEARTBEAT and DISCONNECT packets', async () => {
+  const transit = Object.create(Transit.prototype) as Transit;
+  const packets: Array<{ type: string; payload: Record<string, unknown> }> = [];
+  transit.star = {
+    instanceID: 'metrics-current',
+    instanceEpoch: instanceEpoch(2000, 1)
+  } as never;
+  (transit as never as {
+    publish(packet: { type: string; payload: Record<string, unknown> }): Promise<void>;
+  }).publish = (packet) => {
+    packets.push(packet);
+    return Promise.resolve();
+  };
+
+  await transit.sendHeartbeat({ id: 'metrics-production-metrics', cpu: 20 } as never);
+  await transit.sendDisconnectPacket();
+
+  assert.deepEqual(
+    packets.map((packet) => ({ type: packet.type, payload: packet.payload })),
+    [
+      {
+        type: 'HEARTBEAT',
+        payload: {
+          cpu: 20,
+          instanceID: 'metrics-current',
+          instanceEpoch: instanceEpoch(2000, 1)
+        }
+      },
+      {
+        type: 'DISCONNECT',
+        payload: {
+          instanceID: 'metrics-current',
+          instanceEpoch: instanceEpoch(2000, 1)
+        }
+      }
+    ]
+  );
 });
 
 test('ServiceCatalog removes remote services and their registered endpoints by node ID', () => {

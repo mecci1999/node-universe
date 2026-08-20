@@ -5,6 +5,7 @@ import Registry from '../registry';
 import { LoggerInstance } from '@/typings/logger';
 import Transit from '@/lib/transit';
 import Node from '../node';
+import { GenericObject } from '@/typings';
 
 /**
  * 服务发现基础类
@@ -194,10 +195,26 @@ export default class BaseDiscoverer {
   /**
    * 接收一个远程节点的心跳
    */
-  public heartbeatReceived(nodeID: string, payload: any) {
+  public heartbeatReceived(nodeID: string, payload: GenericObject) {
     // 从注册表中的节点中获取该节点
     const node = this.registry?.nodes.get(nodeID);
     if (node) {
+      if (node.hasInstanceEpoch() && !node.isCurrentInstanceSignal(payload)) {
+        if (node.hasNewerInstanceSignal(payload)) {
+          // INFO is authoritative for a new process generation. Do not let a
+          // heartbeat alter the previous catalog while requesting it.
+          this.discoverNode(nodeID);
+        } else {
+          this.logger?.debug(`Ignoring non-current HEARTBEAT packet from '${nodeID}'.`, {
+            incomingInstanceID: payload?.instanceID,
+            incomingInstanceEpoch: payload?.instanceEpoch,
+            currentInstanceID: node.instanceID,
+            currentInstanceEpoch: node.instanceEpoch
+          });
+        }
+        return;
+      }
+
       // 检查节点是否有效
       if (!node.available) {
         // 重新连接节点，请求一个新的信息
@@ -206,7 +223,7 @@ export default class BaseDiscoverer {
         if (payload?.seq && node.seq !== payload.seq) {
           // 远程节点的服务发生改变
           this.discoverNode(nodeID);
-        } else if (payload?.instanceID && node.instanceID && !node.instanceID.startsWith(payload.instanceID)) {
+        } else if (payload?.instanceID && node.instanceID && payload.instanceID !== node.instanceID) {
           // 远程节点重启
           this.discoverNode(nodeID);
         } else {
@@ -252,8 +269,8 @@ export default class BaseDiscoverer {
   /**
    * 当一个远程节点断开链接，你可以用该方法清除本地注册
    */
-  public remoteNodeDisconnected(nodeID: string, isUnexpected: boolean) {
-    return this.registry?.nodes.disconnected(nodeID, isUnexpected);
+  public remoteNodeDisconnected(nodeID: string, isUnexpected: boolean, payload?: GenericObject) {
+    return this.registry?.nodes.disconnected(nodeID, isUnexpected, payload);
   }
 
   /**

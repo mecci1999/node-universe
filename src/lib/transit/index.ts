@@ -318,7 +318,12 @@ export default class Transit {
    * 发送一个断开链接的包给远程的节点
    */
   public sendDisconnectPacket() {
-    return this.publish(new Packet(PacketTypes.PACKET_DISCONNECT, null, {})).catch((error) => {
+    return this.publish(
+      new Packet(PacketTypes.PACKET_DISCONNECT, null, {
+        instanceID: this.star.instanceID,
+        instanceEpoch: this.star.instanceEpoch
+      })
+    ).catch((error) => {
       this.logger.error('Unable to send DISCONNECT packet.', error);
     });
   }
@@ -436,7 +441,7 @@ export default class Transit {
 
       // Disconnect
       else if (cmd === PacketTypes.PACKET_DISCONNECT) {
-        this.discoverer?.remoteNodeDisconnected(payload.sender, false);
+        this.discoverer?.remoteNodeDisconnected(payload.sender, false, payload);
       }
 
       // Heartbeat
@@ -793,7 +798,11 @@ export default class Transit {
    * 发送一个节点的心跳
    */
   public sendHeartbeat(localNode: Node) {
-    const packet = new Packet(PacketTypes.PACKET_HEARTBEAT, null, { cpu: localNode.cpu });
+    const packet = new Packet(PacketTypes.PACKET_HEARTBEAT, null, {
+      cpu: localNode.cpu,
+      instanceID: this.star.instanceID,
+      instanceEpoch: this.star.instanceEpoch
+    });
     if (!packet) return Promise.reject();
 
     return this.publish(packet).catch((error) => {
@@ -1044,6 +1053,7 @@ export default class Transit {
         client: info.client,
         config: info.config,
         instanceID: this.star.instanceID,
+        instanceEpoch: this.star.instanceEpoch,
         metadata: info.metadata,
         seq: info.seq
       })

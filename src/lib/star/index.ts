@@ -47,6 +47,7 @@ import { Validator } from '@/typings/validator';
 import kleur from 'kleur';
 import Tracer from '../tracing/tracer';
 import { glob } from 'glob';
+import { generateInstanceEpoch } from '../registry/instance-epoch';
 
 // 默认选项
 const defaultOptions = {
@@ -182,6 +183,7 @@ export default class Star {
   public nodeID: string | null = ''; // 节点ID
   public metadata: GenericObject = {}; // 元数据
   public instanceID: string = ''; // 实例ID
+  public instanceEpoch: string = ''; // 实例世代，用于拒绝延迟 INFO
   public started: boolean = false; // 是否已启动
   public stopping: boolean = false; // 是否正在停止
 
@@ -286,6 +288,7 @@ export default class Star {
     this.metadata = this.options.metadata || {};
     this.nodeID = this.options.nodeID || getNodeID();
     this.instanceID = generateToken();
+    this.instanceEpoch = generateInstanceEpoch();
 
     // 初始化服务管理结构
     this._servicesMap = new Map();

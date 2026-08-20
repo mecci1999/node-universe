@@ -403,7 +403,17 @@ export default class Registry {
     let node = this.nodes.localNode;
     if (incSeq && node?.seq) node.seq++;
 
-    const rawInfo = _.pick(node, ['ipList', 'hostname', 'instanceID', 'client', 'config', 'port', 'seq', 'metadata']);
+    const rawInfo = _.pick(node, [
+      'ipList',
+      'hostname',
+      'instanceID',
+      'instanceEpoch',
+      'client',
+      'config',
+      'port',
+      'seq',
+      'metadata'
+    ]);
 
     if (!isStopping) {
       rawInfo.services = this.services.getLocalNodeServices();
